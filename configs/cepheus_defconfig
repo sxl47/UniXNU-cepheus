@@ -1,0 +1,36 @@
+# cepheus_defconfig
+# Mirrors UniXNU-uke's uke-full_defconfig -- the configuration that mounts a root volume and
+# starts launchd on SM7675. Every switch below is reproducible from the pinned sources alone.
+#
+# The hardware-qualification gates are deliberately absent, for the reasons uke records and this
+# port rediscovered the hard way: VIRTIO_BLOCK / RAM_BLOCK need a live guest snapshot
+# (gdb-stop.json) of the original IOBlockStorageDevice metadata; VERIFIED_ROOT_PROBE /
+# OWNER_ROOT_AUDIT / OWNER_ROOT_TRUST need a signed policy bundle built from the real OS/SystemOS
+# DMGs; BOOT_PROGRESS refuses to build without all of those. Enabling them mid-bring-up produces a
+# chain of gates that a cold build cannot satisfy.
+
+CONFIG_XNU_BUILD_ARCHIVES=y
+CONFIG_XNU_SOURCE_CORECRYPTO14=y
+CONFIG_XNU_SOURCE_PTHREAD=y
+CONFIG_XNU_ARM_DT_PLATFORM=y
+CONFIG_XNU_ARMCPU=y
+CONFIG_XNU_NATIVE_UFS=y
+CONFIG_XNU_NATIVE_AES=y
+CONFIG_XNU_TRUST_CACHE_RUNTIME=y
+CONFIG_XNU_SOURCE_MOCKFS=y
+CONFIG_XNU_NATIVE_CS_HASH_CACHE=y
+CONFIG_XNU_DT_PANIC_REGION=y
+CONFIG_XNU_NATIVE_ARCH_TIMER=y
+CONFIG_XNU_NATIVE_PAN=y
+CONFIG_XNU_OWNER_DATA_VOLUME_UUID="BEC2158A-350E-4F2E-B87E-A0E69FB0BDEA"
+
+# sheng / uke specific, not carried over:
+#   CONFIG_XNU_SHENG_PMGR                needs the target board's PMGR values
+#   CONFIG_XNU_ZONE_PGZ_ALIGNMENT_PROBE  a probe for a symptom cepheus has not shown
+#   CONFIG_XNU_NATIVE_LEGACY_DISPLAY     needs display configuration this port has not done
+#   CONFIG_XNU_NATIVE_ADRENO             the driver knows Adreno 740; cepheus is 640
+
+CONFIG_XNU_CRYPTO_BOOTSTRAP="prelinked"
+CONFIG_XNU_EXTRA_LD_ARCHIVES=""
+CONFIG_XNU_NATIVE_MOBILE_DISPLAY=n
+CONFIG_XNU_ARMVIRT_PLATFORM=n

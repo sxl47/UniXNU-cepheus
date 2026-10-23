@@ -1,0 +1,122 @@
+# UniXNU device repo for Xiaomi Mi 9 (cepheus, SM8150)
+# 基于 Lux12138/unixnu-nabu 改造（2026-10-23）。
+# 标了 TODO_MEASURE 的值必须在小米 9 真机（TWRP/fastboot）上实测后填入。
+# 实测方法见 docs/cepheus-measure.md，平台参考值见 ../notes/raphael-intel.md
+
+[board]
+name = "cepheus"
+soc = "SM8150"
+description = "Xiaomi Mi 9"
+kit = "cepheus"
+
+[ipsw]
+# 起步沿用 nabu 验证过的 iPad IPSW（SM8150 链路已通）。
+# 后续可评估 iPhone 的 iOS 16.7.16（guacamole/raphael 路线曾验证）。
+url = "https://updates.cdn-apple.com/2025SpringFCS/fullrestores/122-77166/DCA6CFE8-90E9-4B92-880D-3DE171798E40/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw"
+product = "iPad7,1"
+version = "17.7.11"
+build = "21H461"
+device_class = "j120ap"
+chip_id = 0x8011
+board_id = 12
+# OS 和 Cryptex1,SystemOS 是 userdata 镜像的两个窗口，缺了就没有根可挂。
+fetch = ["KernelCache", "DeviceTree", "StaticTrustCache", "Cryptex1,SystemTrustCache",
+         "OS", "Cryptex1,SystemOS"]
+
+[ipsw.sha256]
+# TODO: 下面两个 sha256 抄自 nabu 的 17.7.11 IPSW，沿用同一 IPSW 时无需改动；
+# 若换 IPSW，用 7z/提取工具输出的校验值更新。
+"044-76040-038.dmg" = "3f99b859c9728379110b66657c7b15285bcb1925ad8b5726542e2cdcf8b1028d"
+"044-76034-038.dmg" = "b4c5513e2df9369895d21fd8b5726542e2cdcf8b1028d044-76034-PLACEHOLDER"
+
+[kernel]
+defconfig = "cepheus_defconfig"
+# 归档构建器在内核链接前依序运行。清单沿用 nabu（SM8150 通用）。
+# 注意 build-libpthread-kernel.py 必须在列，否则 panic: pthread kernel extension not loaded。
+archives = [
+    "build-corecrypto-14.py",
+    "build-corecrypto-14.py --namespace",
+    "build-arm-driver.py ArmDTPlatform",
+    "build-arm-driver.py ArmCpu",
+    "build-arm-driver.py NativeAES",
+    "build-native-aes-bindings.py",
+    "prepare-storage-headers.py",
+    "build-arm-driver.py NativeUfs --unverified",
+    "build-arm-driver.py NativeRamBlock",
+    "build-libpthread-kernel.py",
+  ]
+
+[payload.adt]
+# TODO: 需要 make-cepheus-adt.py —— 以 Lux12138/UniXNU fork 里的
+# scripts/make-nabu-adt.py 为底本改：fbcon 节点 reg、分辨率（1080x2340）、
+# dram_size。nabu 的 fbcon reg=<0x9C000000 0xC00000> 是 nabu 面板 framebuffer
+# 的地址，小米 9 的必须从设备树实测（TODO_MEASURE）。
+tool = "scripts/make-cepheus-adt.py"
+# TODO_MEASURE: 小米 9 有 6GB/8GB 两版。nabu 警告：dram_size 照抄别的机器
+# 会让高地址内存对 Darwin 不可见。用 TWRP `cat /proc/meminfo` 实测：
+#   6GB 版起步值: 0x180000000   8GB 版起步值: 0x200000000（按 MemTotal 校准）
+owned_memory_size = "0x20000000"
+dram_size = "0x180000000"          # TODO_MEASURE（6GB 起步占位）
+cpu_regs = "0,0x100,0x200,0x300,0x400,0x500,0x600,0x700"
+packed_data_ramdisk = true
+# TODO_MEASURE: 从所选 IPSW 的 OS dmg 里读 OS 卷的 vol_uuid：
+#   7z l -slt <OS>.dmg | grep vol_uuid
+# nabu 的值（04769d26-...）只对它那份 IPSW 有效，换 IPSW 就要重读。
+root_match_volume_uuid = "TODO_MEASURE-OS-volume-uuid"
+ipad_identity = true
+unique_chip_id = false
+
+[userdata]
+# TODO_MEASURE —— raphael 的值（同 SoC 不同机型）仅供参考，小米 9 必须实测：
+#   TWRP: /sys/block/sda/sdaXX(userdata) 的 start/size（512B 扇区）
+#   first_lba = start / 8, last_lba = first_lba + size/8 - 1（UFS LBA 4096 字节）
+#   交叉验证: fastboot partition-size:userdata
+# raphael (113GB UFS): first 0x7C000 / last 0x1C457FA —— 不是小米 9 的值！
+first_lba  = 0x0000000             # TODO_MEASURE
+last_lba   = 0x0000000             # TODO_MEASURE
+lba_bytes = 4096
+windows = [
+  { name = "OS", component = "OS" },
+  { name = "SystemOS", component = "Cryptex1,SystemOS" },
+]
+
+[kernel.prelink]
+# 注意：kernelcache_sha256 每次内核构建后变化，首次构建成功后用产物重算填入。
+tool = "kits/NativePrelink/emit_prelink.py"
+kernel = "build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837.unstripped.noctf"
+kernelcache_sha256 = "TODO_AFTER_FIRST_BUILD"
+slide = "-0x1000000"
+early_security_init = "com.apple.driver.AppleMobileFileIntegrity=0xfffffff005ab4ae0"
+roots = [
+    "com.apple.AppleFSCompression.AppleFSCompressionTypeZlib",
+    "com.apple.driver.AppleARMPlatform",
+    "com.apple.driver.AppleARMWatchdogTimer",
+    "com.apple.driver.AppleAudioClockLibs",
+    "com.apple.driver.AppleEffaceableStorage",
+    "com.apple.driver.AppleIISController",
+    "com.apple.driver.AppleM2ScalerCSCDriver",
+    "com.apple.driver.AppleMobileFileIntegrity",
+    "com.apple.driver.ApplePMGR",
+    "com.apple.driver.IODARTFamily",
+    "com.apple.filesystems.apfs",
+    "com.apple.iokit.CoreAnalyticsFamily",
+    "com.apple.iokit.IOAVFamily",
+    "com.apple.iokit.IOAudio2Family",
+    "com.apple.iokit.IOCECFamily",
+    "com.apple.iokit.IOCryptoAcceleratorFamily",
+    "com.apple.iokit.IOGPUFamily",
+    "com.apple.iokit.IOHDCPFamily",
+    "com.apple.iokit.IOMobileGraphicsFamily",
+    "com.apple.iokit.IOReportFamily",
+    "com.apple.iokit.IOSlowAdaptiveClockingFamily",
+    "com.apple.iokit.IOStorageFamily",
+    "com.apple.iokit.IOSurface",
+    "com.apple.kec.Libm",
+    "com.apple.kec.corecrypto",
+    "com.apple.kext.AppleMatch",
+    "com.apple.kext.CoreTrust",
+    "com.apple.security.AppleImage4",
+    "com.apple.security.sandbox",
+    "com.apple.iokit.IOHIDFamily",
+    "com.apple.iokit.IOHIDEventDriver",
+  ]
