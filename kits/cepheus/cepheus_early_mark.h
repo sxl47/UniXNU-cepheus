@@ -11,7 +11,7 @@
 //
 // 用法（arm_init.c 最早期）：
 //     cepheus_mark_init((const unsigned long *)&args->Video);
-//     NABU_MARK(1);            // arm_init 进入
+//     CEPHUS_MARK(1);            // arm_init 进入
 //     ...
 //
 // 读法：
@@ -23,4 +23,4 @@ void cepheus_mark_init(const unsigned long *video);
 void cepheus_mark(int n);
 
 // 标记编号 → 颜色（1 白 2 黄 3 青 4 绿 5 品红 6 橙 7 蓝 8 红）
-#define NABU_MARK(n) cepheus_mark(n)
+#define CEPHUS_MARK(n) cepheus_mark(n)

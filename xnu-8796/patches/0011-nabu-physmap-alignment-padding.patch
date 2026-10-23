@@ -12,7 +12,7 @@ diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
 + * arm_vm_physmap_slide() preserves each PA's block offset. Each PTOV entry
 + * can therefore consume up to one extra twig of VA space. Reserve that
 + * space in both the aperture bound and its L1 allocation, including the
-+ * ARM_LARGE_MEMORY configuration used by NABU's non-PPL kernel.
++ * ARM_LARGE_MEMORY configuration used by CEPHEUS's non-PPL kernel.
 + */
 +#define ARM64_PHYSMAP_ALIGNMENT_PADDING (PTOV_TABLE_SIZE * ARM_TT_TWIG_SIZE)
 +#endif

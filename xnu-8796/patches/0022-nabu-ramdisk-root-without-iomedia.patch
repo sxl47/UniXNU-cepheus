@@ -5,7 +5,7 @@ diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
  	bool                wasHiding;
  
  	iomediaClass = OSMetaClass::getMetaClassWithName(gIOMediaKey);
-+#if !defined(ARM64_BOARD_CONFIG_NABU)
++#if !defined(ARM64_BOARD_CONFIG_CEPHEUS)
  	assert(iomediaClass);
 +#endif
  
@@ -15,8 +15,8 @@ diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
  	}
  	UNLOCKNOTIFY();
  
-+#if defined(ARM64_BOARD_CONFIG_NABU)
-+	/* NABU has no IOStorageFamily: without the IOMedia class no media exists to unhide. */
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++	/* CEPHEUS has no IOStorageFamily: without the IOMedia class no media exists to unhide. */
 +	if (!iomediaClass) {
 +		wasHiding = false;
 +	}

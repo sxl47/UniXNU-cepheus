@@ -7,7 +7,7 @@
 + *
 + * watchdogd also writes the device boot stage to the PMU: it looks up
 + * the IOService with IOPMUPrimary = 1 and crashes when there is none
-+ * (customer builds ignore -wdt_no_pmu). NABU has no Apple PMU, so this
++ * (customer builds ignore -wdt_no_pmu). CEPHEUS has no Apple PMU, so this
 + * service carries IOPMUPrimary and accepts property writes.
   */
  #include <pexpert/arm64/board_config.h>
@@ -36,5 +36,5 @@
  	setProperty(kIOUserClientClassKey, "IOWatchdogUserClient");
 +	setProperty("IOPMUPrimary", 1ULL, 32);
  	registerService();
- 	IOLog("NABU WDT: IOWatchdog registered (accepts check-ins, never fires)\n");
+ 	IOLog("CEPHEUS WDT: IOWatchdog registered (accepts check-ins, never fires)\n");
  	return true;

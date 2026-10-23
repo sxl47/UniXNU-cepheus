@@ -43,11 +43,10 @@ dmesg | grep -i "mdss\|framebuffer\|s6e3fc"
 ```
 沿用 nabu 同款 IPSW 的话，可以直接先用 nabu 的值 `04769d26-2ca0-4825-b443-e2e5f88300f2`。
 
-## 5. ADT 生成器（→ scripts/make-cepheus-adt.py）
+## 5. ADT 生成器（✅ 已完成：scripts/make-cepheus-adt.py）
 
-- 底本：`Lux12138/UniXNU` fork 的 `scripts/make-nabu-adt.py`（**待克隆该 fork**，网络恢复后执行：
-  `git clone --depth 1 https://github.com/Lux12138/UniXNU.git repos/UniXNU-nabu-fork`）
-- 改动点：fbcon reg/分辨率（用 §3 实测值）、dram_size（§1）、注释里的 nabu→cepheus
+- 已基于 Lux12138/UniXNU fork 的 make-nabu-adt.py 改造完成，并新增 `/cepheus-fbcon` 节点（补丁 0003 消费：reg=<物理地址 大小> + width/height/stride）
+- **仍需实测**：fbcon 的 reg/size（§3 实测后用 `--fbcon-reg/--fbcon-size` 传入或改脚本默认值，当前是 nabu 占位值 0x9C000000/0xC00000）
 
 ## 6. CI 里的 fork 地址
 

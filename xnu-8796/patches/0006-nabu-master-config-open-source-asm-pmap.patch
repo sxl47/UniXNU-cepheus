@@ -1,11 +1,11 @@
-diff --git a/config/MASTER.arm64.nabu b/config/MASTER.arm64.nabu
+diff --git a/config/MASTER.arm64.cepheus b/config/MASTER.arm64.cepheus
 new file mode 100644
 index 0000000..6c63bbd
 --- /dev/null
-+++ b/config/MASTER.arm64.nabu
++++ b/config/MASTER.arm64.cepheus
 @@ -0,0 +1,114 @@
 +#
-+# nabu (Redmi Note 10 Pro, SM7150): MASTER.arm64.MacOSX plus the open-source
++# cepheus (Redmi Note 10 Pro, SM7150): MASTER.arm64.MacOSX plus the open-source
 +# arm64 assembly and pmap (nos_arm_asm, nos_arm_pmap). Apple's own SoC configs
 +# link those from the KDK's closed lib<SOC>.os.<CONFIG>.a instead, which is
 +# arm64e and Apple-silicon specific. kpc is dropped: it programs Apple's PMU.

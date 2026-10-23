@@ -2,8 +2,8 @@
 +++ b/iokit/Kernel/arm/NabuCPU.cpp
 @@ -1,7 +1,7 @@
  /*
-- * Single-CPU bring-up for nabu using XNU's legacy IOCPU interface.
-+ * A55 SMP bring-up for nabu using XNU's legacy IOCPU interface and PSCI.
+- * Single-CPU bring-up for cepheus using XNU's legacy IOCPU interface.
++ * A55 SMP bring-up for cepheus using XNU's legacy IOCPU interface and PSCI.
   * The architected timer and SGI1 already enter through pe_fiq/sleh_irq.
 - * Secondary CPU startup and system suspend require separate platform work.
 + * CPU_OFF, suspend and the A76 cores still require separate platform work.
@@ -18,16 +18,16 @@
  #include <mach/mach_time.h>
 +#include <pexpert/pexpert.h>
 +
-+extern "C" void nabu_secondary_entry(void);
-+extern "C" boolean_t nabu_cpu_signal_is_enabled(unsigned int cpu);
++extern "C" void cepheus_secondary_entry(void);
++extern "C" boolean_t cepheus_cpu_signal_is_enabled(unsigned int cpu);
 +
 +class NabuCPU;
-+static NabuCPU *nabu_cpus[MAX_CPUS];
-+static uint32_t nabu_cpus_registered;
++static NabuCPU *cepheus_cpus[MAX_CPUS];
++static uint32_t cepheus_cpus_registered;
 +
 +/* SMCCC 1.0: x0 is the signed PSCI result; do not assume x1-x17 survive. */
 +static int32_t
-+nabu_psci_cpu_on(uint64_t target, uint64_t entry, uint64_t context)
++cepheus_psci_cpu_on(uint64_t target, uint64_t entry, uint64_t context)
 +{
 +	register uint64_t x0 __asm__("x0") = 0xC4000003ULL;
 +	register uint64_t x1 __asm__("x1") = target;
@@ -64,34 +64,34 @@
  		return false;
  	}
 -	if (topology->num_cpus != 1) {
--		panic("NABU CPU: only single-CPU bring-up is supported");
+-		panic("CEPHEUS CPU: only single-CPU bring-up is supported");
 +	const ml_topology_cpu_t *cpu = &topology->cpus[logical->unsigned32BitValue()];
 +	if (*(const uint32_t *)reg->getBytesNoCopy() != cpu->phys_id) {
 +		return false;
 +	}
 +	if (cpu->phys_id > 0x500 || (cpu->phys_id & 0xff) != 0 ||
-+	    topology->num_cpus > NABU_SMP_MAX_CPUS) {
-+		panic("NABU CPU: invalid A55 topology cpu=%u mpidr=0x%x count=%u",
++	    topology->num_cpus > CEPHEUS_SMP_MAX_CPUS) {
++		panic("CEPHEUS CPU: invalid A55 topology cpu=%u mpidr=0x%x count=%u",
 +		    cpu->cpu_id, cpu->phys_id, topology->num_cpus);
  	}
  	if (!IOCPU::start(provider)) {
  		return false;
 @@ -77,21 +106,75 @@
- 		panic("NABU CPU: PMI routing is not implemented");
+ 		panic("CEPHEUS CPU: PMI routing is not implemented");
  	}
  
 -	/* Re-enter the boot CPU through cpu_machine_init -> PE_cpu_machine_init. */
 -	result = processor_start(machProcessor);
 -	if (result != KERN_SUCCESS || getCPUState() != kIOCPUStateRunning) {
--		panic("NABU CPU: processor_start failed: %d", result);
+-		panic("CEPHEUS CPU: processor_start failed: %d", result);
 +	registerService();
-+	__atomic_store_n(&nabu_cpus[cpu->cpu_id], this, __ATOMIC_RELEASE);
-+	__atomic_add_fetch(&nabu_cpus_registered, 1, __ATOMIC_ACQ_REL);
++	__atomic_store_n(&cepheus_cpus[cpu->cpu_id], this, __ATOMIC_RELEASE);
++	__atomic_add_fetch(&cepheus_cpus_registered, 1, __ATOMIC_ACQ_REL);
 +	if (cpu == topology->boot_cpu) {
 +		thread_t thread;
 +		result = kernel_thread_start(&NabuCPU::startAll, NULL, &thread);
 +		if (result != KERN_SUCCESS) {
-+			panic("NABU CPU: cannot create startup thread: %d", result);
++			panic("CEPHEUS CPU: cannot create startup thread: %d", result);
 +		}
 +		thread_deallocate(thread);
 +	}
@@ -105,59 +105,59 @@
 +	const ml_topology_info_t *topology = ml_get_topology_info();
 +	uint32_t requested = 1;
 +	PE_parse_boot_argn("cpus", &requested, sizeof(requested));
-+	IOLog("NABU CPU: requested=%u selected=%u (A55 limit=%u)\n",
-+	    requested, topology->num_cpus, NABU_SMP_MAX_CPUS);
++	IOLog("CEPHEUS CPU: requested=%u selected=%u (A55 limit=%u)\n",
++	    requested, topology->num_cpus, CEPHEUS_SMP_MAX_CPUS);
 +
 +	uint64_t deadline;
 +	nanoseconds_to_deadline(10 * NSEC_PER_SEC, &deadline);
-+	while (__atomic_load_n(&nabu_cpus_registered, __ATOMIC_ACQUIRE) != topology->num_cpus) {
++	while (__atomic_load_n(&cepheus_cpus_registered, __ATOMIC_ACQUIRE) != topology->num_cpus) {
 +		if (mach_absolute_time() > deadline) {
 +			for (unsigned int i = 0; i < topology->num_cpus; i++) {
-+				if (__atomic_load_n(&nabu_cpus[i], __ATOMIC_ACQUIRE) == NULL) {
-+					IOLog("NABU CPU: cpu=%u NOT registered (IOKit matching timeout)\n", i);
++				if (__atomic_load_n(&cepheus_cpus[i], __ATOMIC_ACQUIRE) == NULL) {
++					IOLog("CEPHEUS CPU: cpu=%u NOT registered (IOKit matching timeout)\n", i);
 +				}
 +			}
-+			panic("NABU CPU: CPU registration timeout");
++			panic("CEPHEUS CPU: CPU registration timeout");
 +		}
 +		IOSleep(1);
 +	}
 +	/* The supplied ADT has cpu0 as the boot CPU and ascending A55 nodes. */
 +	if (topology->boot_cpu->cpu_id != 0 || topology->boot_cpu->phys_id != 0) {
-+		panic("NABU CPU: expected boot MPIDR 0 and logical CPU 0");
++		panic("CEPHEUS CPU: expected boot MPIDR 0 and logical CPU 0");
 +	}
 +	for (unsigned int i = 0; i < topology->num_cpus; i++) {
-+		NabuCPU *cpu = __atomic_load_n(&nabu_cpus[i], __ATOMIC_ACQUIRE);
++		NabuCPU *cpu = __atomic_load_n(&cepheus_cpus[i], __ATOMIC_ACQUIRE);
 +		kern_return_t kr = processor_start(cpu->machProcessor);
 +		if (kr != KERN_SUCCESS) {
-+			panic("NABU CPU: cpu=%u processor_start failed: %d", i, kr);
++			panic("CEPHEUS CPU: cpu=%u processor_start failed: %d", i, kr);
 +		}
 +		/* processor_start() is asynchronous for secondaries in this XNU. */
 +		nanoseconds_to_deadline(5 * NSEC_PER_SEC, &deadline);
 +		while (__atomic_load_n(&cpu->initialized, __ATOMIC_ACQUIRE) == 0 ||
-+		    !nabu_cpu_signal_is_enabled(i)) {
++		    !cepheus_cpu_signal_is_enabled(i)) {
 +			if (mach_absolute_time() > deadline) {
-+				IOLog("NABU CPU: cpu=%u mpidr=0x%x NOT alive after 5s\n",
++				IOLog("CEPHEUS CPU: cpu=%u mpidr=0x%x NOT alive after 5s\n",
 +				    i, topology->cpus[i].phys_id);
-+				panic("NABU CPU: cpu=%u startup timeout (reset/MMU/GIC/SGI)", i);
++				panic("CEPHEUS CPU: cpu=%u startup timeout (reset/MMU/GIC/SGI)", i);
 +			}
 +			IOSleep(1);
 +		}
-+		IOLog("NABU CPU: cpu=%u mpidr=0x%x came alive; SGI1 OK\n",
++		IOLog("CEPHEUS CPU: cpu=%u mpidr=0x%x came alive; SGI1 OK\n",
 +		    i, topology->cpus[i].phys_id);
  	}
 +	/* Publish exactly once, after every selected CPU has completed initCPU(). */
  	ml_cpu_init_completed();
 -	cpusRunning();
 -	registerService();
-+	__atomic_load_n(&nabu_cpus[topology->boot_cpu->cpu_id], __ATOMIC_ACQUIRE)->cpusRunning();
++	__atomic_load_n(&cepheus_cpus[topology->boot_cpu->cpu_id], __ATOMIC_ACQUIRE)->cpusRunning();
  	IOService::publishResource(gIOAllCPUInitializedKey, kOSBooleanTrue);
 -
 -	/* Announce completion only after registration, startup and SGI validation. */
  	ml_set_max_cpus(topology->max_cpu_id + 1);
--	IOLog("NABU CPU: boot CPU %u registered, SGI1 verified, initialization complete\n",
+-	IOLog("CEPHEUS CPU: boot CPU %u registered, SGI1 verified, initialization complete\n",
 -	    getCPUNumber());
 -	return true;
-+	IOLog("NABU CPU: %u/%u CPUs initialized, SGI1 verified\n",
++	IOLog("CEPHEUS CPU: %u/%u CPUs initialized, SGI1 verified\n",
 +	    topology->num_cpus, topology->num_cpus);
 +	thread_terminate(current_thread());
  }
@@ -167,8 +167,8 @@
  NabuCPU::initCPU(bool boot)
  {
  	if (!boot) {
--		panic("NABU CPU: resume is not implemented");
-+		panic("NABU CPU: cpu=%u resume is not implemented", getCPUNumber());
+-		panic("CEPHEUS CPU: resume is not implemented");
++		panic("CEPHEUS CPU: cpu=%u resume is not implemented", getCPUNumber());
  	}
  	assert(cpu_number() == (int)getCPUNumber());
 -	assert(ml_get_interrupts_enabled());
@@ -184,12 +184,12 @@
  	signalCPU(this);
 -	while (!ml_cpu_signal_is_enabled()) {
 -		if (mach_absolute_time() > deadline) {
--			panic("NABU CPU: SGI1 self-test timed out");
+-			panic("CEPHEUS CPU: SGI1 self-test timed out");
 -		}
 -		__asm__ volatile("yield");
 -	}
  	setCPUState(kIOCPUStateRunning);
-+	kprintf("NABU CPU: cpu=%u entered initCPU mpidr=0x%llx EL%llu IRQs=%u\n",
++	kprintf("CEPHEUS CPU: cpu=%u entered initCPU mpidr=0x%llx EL%llu IRQs=%u\n",
 +	    getCPUNumber(), __builtin_arm_rsr64("MPIDR_EL1") & 0xffffULL,
 +	    __builtin_arm_rsr64("CurrentEL") >> 2, ml_get_interrupts_enabled());
 +	__atomic_store_n(&initialized, 1, __ATOMIC_RELEASE);
@@ -200,18 +200,18 @@
  {
 -	/* Only the boot CPU is registered by this driver. */
 -	if (target != this || cpu_number() != (int)getCPUNumber()) {
--		panic("NABU CPU: secondary CPU signalling is not implemented");
+-		panic("CEPHEUS CPU: secondary CPU signalling is not implemented");
 +	const ml_topology_info_t *topology = ml_get_topology_info();
 +	unsigned int logical = target->getCPUNumber();
 +	if (logical >= topology->num_cpus) {
-+		panic("NABU CPU: invalid SGI target %u", logical);
++		panic("CEPHEUS CPU: invalid SGI target %u", logical);
  	}
 -	uint64_t mpidr = __builtin_arm_rsr64("MPIDR_EL1");
 +	/* Use the TARGET affinity, including Aff1, never the sender's MPIDR. */
 +	uint64_t mpidr = topology->cpus[logical].phys_id;
  	unsigned int aff0 = mpidr & 0xff;
  	if (aff0 >= 16) {
- 		panic("NABU CPU: SGI target requires unsupported range selector");
+ 		panic("CEPHEUS CPU: SGI target requires unsupported range selector");
 @@ -146,9 +229,25 @@
  }
  
@@ -224,17 +224,17 @@
 +	/* cpu_start() passes NULL,NULL: x20/x21 are set by LowResetVectorBase. */
 +	if (start_paddr != 0 || arg_paddr != 0 || cpu->phys_id == 0 ||
 +	    __atomic_load_n(&initialized, __ATOMIC_ACQUIRE) != 0) {
-+		panic("NABU CPU: cpu=%u unsupported restart", getCPUNumber());
++		panic("CEPHEUS CPU: cpu=%u unsupported restart", getCPUNumber());
 +	}
-+	vm_offset_t entry = ml_static_vtop((vm_offset_t)&nabu_secondary_entry);
-+	IOLog("NABU CPU: cpu=%u CPU_ON target=0x%x entry_pa=0x%llx context=%u\n",
++	vm_offset_t entry = ml_static_vtop((vm_offset_t)&cepheus_secondary_entry);
++	IOLog("CEPHEUS CPU: cpu=%u CPU_ON target=0x%x entry_pa=0x%llx context=%u\n",
 +	    getCPUNumber(), cpu->phys_id, (uint64_t)entry, getCPUNumber());
 +	__builtin_arm_dsb(DSB_SY);
-+	int32_t rc = nabu_psci_cpu_on(cpu->phys_id, entry, getCPUNumber());
-+	IOLog("NABU CPU: cpu=%u PSCI CPU_ON rc=%d\n", getCPUNumber(), rc);
++	int32_t rc = cepheus_psci_cpu_on(cpu->phys_id, entry, getCPUNumber());
++	IOLog("CEPHEUS CPU: cpu=%u PSCI CPU_ON rc=%d\n", getCPUNumber(), rc);
 +	/* cpu_start() discards PE_cpu_start's return; do not silently carry on. */
 +	if (rc != 0) {
-+		panic("NABU CPU: cpu=%u NOT alive: PSCI CPU_ON rc=%d", getCPUNumber(), rc);
++		panic("CEPHEUS CPU: cpu=%u NOT alive: PSCI CPU_ON rc=%d", getCPUNumber(), rc);
 +	}
 +	return KERN_SUCCESS;
  }
@@ -246,7 +246,7 @@
  
  		flush_dcache((vm_offset_t)&CpuDataEntries[cpu], sizeof(cpu_data_entry_t), FALSE);
  		flush_dcache((vm_offset_t)cpu_data_ptr, sizeof(cpu_data_t), FALSE);
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +		/* The reset stub loads these through physical addresses with caches off.
 +		 * Use VA range cleans to PoC, including on coherent-I/O builds. */
 +		extern uint8_t bootstrap_pagetables[BOOTSTRAP_TABLE_SIZE];
@@ -266,11 +266,11 @@
  }
  
  
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +/* Bring-up observer: the self-SGI clears SIGPdisabled after IRQs unmask. */
-+boolean_t nabu_cpu_signal_is_enabled(unsigned int cpu);
++boolean_t cepheus_cpu_signal_is_enabled(unsigned int cpu);
 +boolean_t
-+nabu_cpu_signal_is_enabled(unsigned int cpu)
++cepheus_cpu_signal_is_enabled(unsigned int cpu)
 +{
 +	if (cpu >= MAX_CPUS) {
 +		return FALSE;
@@ -290,13 +290,13 @@
  	const boolean_t cpus_boot_arg_present = PE_parse_boot_argn("cpus", &cpu_boot_arg, sizeof(cpu_boot_arg));
  	const boolean_t cpumask_boot_arg_present = PE_parse_boot_argn("cpumask", &cpumask_boot_arg, sizeof(cpumask_boot_arg));
  
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +	/* Opt in to SMP. Never expose the A76s to this A55-only configuration. */
 +	if (!cpus_boot_arg_present || cpu_boot_arg == 0) {
 +		cpu_boot_arg = 1;
 +	}
-+	if (cpu_boot_arg > NABU_SMP_MAX_CPUS) {
-+		cpu_boot_arg = NABU_SMP_MAX_CPUS;
++	if (cpu_boot_arg > CEPHEUS_SMP_MAX_CPUS) {
++		cpu_boot_arg = CEPHEUS_SMP_MAX_CPUS;
 +	}
 +#endif
 +
@@ -307,7 +307,7 @@
  		}
  #endif
  
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +		/* Aff1 encodes the core on SM7150, not an Apple cluster ID. */
 +		cpu->die_cluster_id = (int)ml_readprop(child, "die-cluster-id", 0);
 +		cpu->cluster_core_id = (int)ml_readprop(child, "cluster-core-id", cpu->phys_id >> 8);
@@ -326,8 +326,8 @@
  	mrs		x15, MPIDR_EL1						// Load MPIDR to get CPU number
 -#if HAS_CLUSTER
 -	and		x0, x15, #0xFFFF					// CPU number in Affinity0, cluster ID in Affinity1
-+#if HAS_CLUSTER || defined(NABU)
-+	and		x0, x15, #0xFFFF					// Full Aff1:Aff0 (NABU: core in Aff1)
++#if HAS_CLUSTER || defined(CEPHEUS)
++	and		x0, x15, #0xFFFF					// Full Aff1:Aff0 (CEPHEUS: core in Aff1)
  #else
  	and		x0, x15, #0xFF						// CPU number is in MPIDR Affinity Level 0
  #endif
@@ -335,21 +335,21 @@
  LEXT(bootstrap_instructions)
  
  #endif /* defined(KERNEL_INTEGRITY_KTRR) || defined(KERNEL_INTEGRITY_CTRR) */
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +/* PSCI CPU_ON entry (physical): x0=context_id, no stack, MMU/caches off.
 + * Keep this separate from __start (which requires x0=boot_args PA).
 + * Firmware may return at EL1 or EL2; check before accessing EL1 state.
 + * The EL2 path assumes no resident hypervisor and CNTVOFF_EL2=0 on boot.
 + */
 +	.align 2
-+	.globl EXT(nabu_secondary_entry)
-+LEXT(nabu_secondary_entry)
++	.globl EXT(cepheus_secondary_entry)
++LEXT(cepheus_secondary_entry)
 +	msr		DAIFSet, #0xf
 +	mrs		x1, CurrentEL
 +	cmp		x1, #0x4
-+	b.eq	Lnabu_secondary_el1
++	b.eq	Lcepheus_secondary_el1
 +	cmp		x1, #0x8
-+	b.ne	Lnabu_secondary_bad_el
++	b.ne	Lcepheus_secondary_bad_el
 +	adrp	x1, EXT(LowExceptionVectorBase)@page
 +	add		x1, x1, EXT(LowExceptionVectorBase)@pageoff
 +	msr		VBAR_EL2, x1
@@ -371,19 +371,19 @@
 +	MOV64	x1, 0x30d00800
 +	msr		SCTLR_EL1, x1
 +	isb
-+	adrp	x1, Lnabu_secondary_el1@page
-+	add		x1, x1, Lnabu_secondary_el1@pageoff
++	adrp	x1, Lcepheus_secondary_el1@page
++	add		x1, x1, Lcepheus_secondary_el1@pageoff
 +	msr		ELR_EL2, x1
 +	mov		x1, #0x3c5			// DAIF masked, AArch64 EL1h
 +	msr		SPSR_EL2, x1
 +	eret
-+Lnabu_secondary_bad_el:
++Lcepheus_secondary_bad_el:
 +	b		.
-+Lnabu_secondary_el1:
++Lcepheus_secondary_el1:
 +	/* x0 is deliberately unused; reset_vector selects CPU data by MPIDR. */
 +	msr		SPSel, #1
 +	b		EXT(LowResetVectorBase)
-+#endif /* NABU */
++#endif /* CEPHEUS */
 +
  	.align 2
  	.globl EXT(resume_idle_cpu)
@@ -392,7 +392,7 @@
  	ic		iallu
  #endif
  
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +	/* Complete local TLB/I-cache invalidation before enabling the MMU. */
 +	dsb		sy
 +	isb
@@ -401,14 +401,14 @@
  	/* If x21 is not 0, then this is either the start_cpu path or
  	 * the resume_idle_cpu path.  cpu_ttep should already be
  	 * populated, so just switch to the kernel_pmap now.
---- a/pexpert/pexpert/arm64/NABU.h
-+++ b/pexpert/pexpert/arm64/NABU.h
+--- a/pexpert/pexpert/arm64/CEPHEUS.h
++++ b/pexpert/pexpert/arm64/CEPHEUS.h
 @@ -17,6 +17,9 @@
  
- #define NABU                     1
+ #define CEPHEUS                     1
  
 +/* Six homogeneous A55s; cpus=N is clamped here until A76/AMP is audited. */
-+#define NABU_SMP_MAX_CPUS         6
++#define CEPHEUS_SMP_MAX_CPUS         6
 +
  #define ARM_ARCH_TIMER
  #define __ARM_ARCH__              8

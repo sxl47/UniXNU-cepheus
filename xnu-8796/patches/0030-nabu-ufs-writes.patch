@@ -1,9 +1,9 @@
---- a/bsd/dev/nabu_ufs.c
-+++ b/bsd/dev/nabu_ufs.c
+--- a/bsd/dev/cepheus_ufs.c
++++ b/bsd/dev/cepheus_ufs.c
 @@ -1,5 +1,5 @@
  /*
-- * NABU internal UFS root device (read-only).
-+ * NABU internal UFS root device.
+- * CEPHEUS internal UFS root device (read-only).
++ * CEPHEUS internal UFS root device.
   *
   * The Qualcomm UFS host (UFSHCI 2.1) is left enabled with the link up by the
   * bootloader, which loaded our boot image from it. This driver reuses that
@@ -18,7 +18,7 @@
 + * against the partition bounds again right before it is issued, so nothing
 + * outside the named partition can be written.
   */
- #if defined(ARM64_BOARD_CONFIG_NABU)
+ #if defined(ARM64_BOARD_CONFIG_CEPHEUS)
  #include <sys/param.h>
 @@ -86,6 +90,7 @@
  	uint8_t tag;
@@ -80,7 +80,7 @@
 +	if (!su.writable || !su.nblocks || count == 0 || count > BOUNCE_SIZE / UFS_BLOCK ||
 +	    lba < su.first_block || lba - su.first_block >= su.nblocks ||
 +	    count > su.nblocks - (lba - su.first_block) || lba + count - 1 > UINT32_MAX) {
-+		printf("NABU UFS: refusing write of %u blocks at 0x%llx\n", count, lba);
++		printf("CEPHEUS UFS: refusing write of %u blocks at 0x%llx\n", count, lba);
 +		return EPERM;
 +	}
 +	uint8_t cdb[10] = {
@@ -160,9 +160,9 @@
 +		if (!su.writable) {
 +			return 0;
 +		}
-+		lck_mtx_lock(&nabu_ufs_lock);
++		lck_mtx_lock(&cepheus_ufs_lock);
 +		int error = ufs_sync_cache();
-+		lck_mtx_unlock(&nabu_ufs_lock);
++		lck_mtx_unlock(&cepheus_ufs_lock);
 +		return error;
 +	}
  	case DKIOCGETMAXBLOCKCOUNTREAD:
@@ -178,17 +178,17 @@
  }
  
  static int
--nabu_ufs_write(__unused dev_t dev, __unused struct uio *uio, __unused int ioflag)
-+nabu_ufs_write(dev_t dev, struct uio *uio, __unused int ioflag)
+-cepheus_ufs_write(__unused dev_t dev, __unused struct uio *uio, __unused int ioflag)
++cepheus_ufs_write(dev_t dev, struct uio *uio, __unused int ioflag)
  {
 -	return EROFS;
 +	if (!su.writable) {
 +		return EROFS;
 +	}
-+	return physio(nabu_ufs_strategy, NULL, dev, B_WRITE, minphys, uio, (int)su.secsize);
++	return physio(cepheus_ufs_strategy, NULL, dev, B_WRITE, minphys, uio, (int)su.secsize);
  }
  
- static const struct bdevsw nabu_ufs_bdevsw = {
+ static const struct bdevsw cepheus_ufs_bdevsw = {
 @@ -470,6 +533,8 @@
  		return ENXIO;
  	}
@@ -214,9 +214,9 @@
 +	/* Only now, with the partition bounds known, can writes be allowed. */
 +	su.writable = (rw != 0);
  	su.ready = true;
--	printf("NABU UFS: \"%s\" on LUN %u: first block 0x%llx, %llu MiB, read-only\n",
+-	printf("CEPHEUS UFS: \"%s\" on LUN %u: first block 0x%llx, %llu MiB, read-only\n",
 -	    want, su.lun, su.first_block, su.nblocks * UFS_BLOCK >> 20);
-+	printf("NABU UFS: \"%s\" on LUN %u: first block 0x%llx, %llu MiB, %s\n",
++	printf("CEPHEUS UFS: \"%s\" on LUN %u: first block 0x%llx, %llu MiB, %s\n",
 +	    want, su.lun, su.first_block, su.nblocks * UFS_BLOCK >> 20,
 +	    su.writable ? "read-write" : "read-only");
  	return 0;

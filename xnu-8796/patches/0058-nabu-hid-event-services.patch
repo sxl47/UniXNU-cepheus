@@ -12,7 +12,7 @@
 +++ b/iokit/KernelConfigTables.cpp
 @@ -67,6 +67,16 @@
      "     'IOProviderClass' = IOPlatformDevice;"
-     "     'IONameMatch'     = 'nabu,display';"
+     "     'IONameMatch'     = 'cepheus,display';"
      "   },"
 +    "   {"
 +    "     'IOClass'         = NabuHIDButtons;"
@@ -56,7 +56,7 @@
 +++ b/iokit/Kernel/arm/hid/IOGraphicsTypes.h
 @@ -0,0 +1,22 @@
 +/*
-+ * NABU: the two IOGraphics types the HID headers use (IOGraphicsFamily
++ * CEPHEUS: the two IOGraphics types the HID headers use (IOGraphicsFamily
 + * is not part of xnu). Layouts as in IOKit/graphics/IOGraphicsTypes.h.
 + */
 +#ifndef _IOKIT_IOGRAPHICSTYPES_H
@@ -94,7 +94,7 @@
 +#include <IOKit/IOLib.h>
 +
 +/*
-+ * NABU: HID logging goes to the kernel console (and so the persistent
++ * CEPHEUS: HID logging goes to the kernel console (and so the persistent
 + * log) instead of os_log, so the HID path is visible in boot logs.
 + */
 +#define HIDLog(fmt, ...)        IOLog("HID: " fmt "\n", ##__VA_ARGS__)
@@ -372,7 +372,7 @@
 +#ifndef IOHIDDeviceTypes_h
 +#define IOHIDDeviceTypes_h
 +
-+/* NABU: kernel build, no SDK TargetConditionals.h */
++/* CEPHEUS: kernel build, no SDK TargetConditionals.h */
 +#ifndef TARGET_OS_DRIVERKIT
 +#define TARGET_OS_DRIVERKIT 0
 +#endif
@@ -694,7 +694,7 @@
 +#include "IOHIDEventData.h"
 +#include "IOHIDUsageTables.h"
 +#include "IOHIDPrivateKeys.h"
-+/* NABU: no <math.h> in the kernel; only NAN is used */
++/* CEPHEUS: no <math.h> in the kernel; only NAN is used */
 +#ifndef NAN
 +#define NAN __builtin_nanf("")
 +#endif
@@ -2502,7 +2502,7 @@
 +#ifndef _IOKIT_IOHIDEVENT_H
 +#define _IOKIT_IOHIDEVENT_H
 +
-+/* NABU: kernel build, no SDK TargetConditionals.h */
++/* CEPHEUS: kernel build, no SDK TargetConditionals.h */
 +#ifndef TARGET_OS_DRIVERKIT
 +#define TARGET_OS_DRIVERKIT 0
 +#endif
@@ -12121,7 +12121,7 @@
 +++ b/iokit/Kernel/arm/hid/IOHIDEventService.h
 @@ -0,0 +1,75 @@
 +/*
-+ * NABU: minimal IOHIDEventService.
++ * CEPHEUS: minimal IOHIDEventService.
 + *
 + * Apple's IOHIDFamily kext is not part of xnu. The iOS 16.7 userland
 + * (IOKit.framework's HID event system, IOHIDFamily-1915.140.3) talks to
@@ -14834,7 +14834,7 @@
 +#ifndef _IOKIT_IOHIDEVENTTYPES_H
 +#define _IOKIT_IOHIDEVENTTYPES_H /* { */
 +
-+/* NABU: kernel build, no SDK TargetConditionals.h */
++/* CEPHEUS: kernel build, no SDK TargetConditionals.h */
 +#ifndef TARGET_OS_DRIVERKIT
 +#define TARGET_OS_DRIVERKIT 0
 +#endif
@@ -20595,7 +20595,7 @@
 +++ b/iokit/Kernel/arm/hid/NabuHID.cpp
 @@ -0,0 +1,539 @@
 +/*
-+ * NABU: HID event services for the iOS userland (backboardd's HID event
++ * CEPHEUS: HID event services for the iOS userland (backboardd's HID event
 + * system).
 + *
 + * backboardd watches for IOService objects with HIDServiceSupport = true,
@@ -20608,8 +20608,8 @@
 + *   NabuHIDButtons  consumer-control keys (power, volume, home)
 + *   NabuHIDTouch    the built-in touch screen (digitizer collections)
 + *
-+ * Hardware drivers feed them through the C entry points nabu_hid_key()
-+ * and nabu_hid_touch(). Boot-arg nabuhidtest=N (seconds) presses Home
++ * Hardware drivers feed them through the C entry points cepheus_hid_key()
++ * and cepheus_hid_touch(). Boot-arg cepheushidtest=N (seconds) presses Home
 + * every N seconds, to test the event path without input hardware.
 + */
 +#include <IOKit/IOLib.h>
@@ -20724,7 +20724,7 @@
 +		ok = super::open(client, options, data);
 +	}
 +	OSSafeReleaseNULL(data);
-+	IOLog("NABU HID: %s open by %s -> %d\n", getName(), client ? client->getName() : "?", ok);
++	IOLog("CEPHEUS HID: %s open by %s -> %d\n", getName(), client ? client->getName() : "?", ok);
 +	return ok;
 +}
 +
@@ -20892,7 +20892,7 @@
 +	IOUserClient *client;
 +
 +	if (type != kIOHIDEventServiceUserClientType) {
-+		IOLog("NABU HID: %s user client type 0x%x unsupported\n", getName(), (unsigned)type);
++		IOLog("CEPHEUS HID: %s user client type 0x%x unsupported\n", getName(), (unsigned)type);
 +		return super::newUserClient(owningTask, securityID, type, properties, handler);
 +	}
 +	client = OSTypeAlloc(IOHIDEventServiceUserClient);
@@ -20901,7 +20901,7 @@
 +	}
 +	if (!client->initWithTask(owningTask, securityID, type)) {
 +		client->release();
-+		IOLog("NABU HID: %s user client init refused\n", getName());
++		IOLog("CEPHEUS HID: %s user client init refused\n", getName());
 +		return kIOReturnBadArgument;
 +	}
 +	if (!client->attach(this)) {
@@ -20943,7 +20943,7 @@
 + * coordinates normalized to 0..1 like IOHIDEventDriver produces for
 + * absolute digitizers.
 + */
-+#define NABU_TOUCH_FINGERS 10
++#define CEPHEUS_TOUCH_FINGERS 10
 +class NabuHIDTouch : public IOHIDEventService {
 +	OSDeclareDefaultStructors(NabuHIDTouch);
 +public:
@@ -20955,9 +20955,9 @@
 +	virtual UInt32 getProductID() APPLE_KEXT_OVERRIDE { return 2; }
 +private:
 +	IOLock *fLock;
-+	bool fDown[NABU_TOUCH_FINGERS];
-+	IOFixed fX[NABU_TOUCH_FINGERS];
-+	IOFixed fY[NABU_TOUCH_FINGERS];
++	bool fDown[CEPHEUS_TOUCH_FINGERS];
++	IOFixed fX[CEPHEUS_TOUCH_FINGERS];
++	IOFixed fY[CEPHEUS_TOUCH_FINGERS];
 +};
 +OSDefineMetaClassAndStructors(NabuHIDTouch, IOHIDEventService);
 +
@@ -20970,7 +20970,7 @@
 +	if (!IOHIDEventService::start(provider)) {
 +		return false;
 +	}
-+	if (PE_parse_boot_argn("nabuhidtest", &fTestSecs, sizeof(fTestSecs)) && fTestSecs) {
++	if (PE_parse_boot_argn("cepheushidtest", &fTestSecs, sizeof(fTestSecs)) && fTestSecs) {
 +		fTest = IOTimerEventSource::timerEventSource(this, &NabuHIDButtons::testFired);
 +		if (fTest && _hidWorkLoop->addEventSource(fTest) == kIOReturnSuccess) {
 +			fTest->setTimeoutMS(fTestSecs * 1000);
@@ -20978,7 +20978,7 @@
 +	}
 +	gNabuButtons = this;
 +	registerService();
-+	IOLog("NABU HID: buttons registered (test every %u s)\n", fTestSecs);
++	IOLog("CEPHEUS HID: buttons registered (test every %u s)\n", fTestSecs);
 +	return true;
 +}
 +
@@ -20988,7 +20988,7 @@
 +	IOHIDEvent *event = IOHIDEvent::keyboardEvent(mach_absolute_time(), kHIDPage_Consumer, usage, down);
 +
 +	if (event) {
-+		IOLog("NABU HID: key 0x%x %s (%u clients)\n", (unsigned)usage, down ? "down" : "up",
++		IOLog("CEPHEUS HID: key 0x%x %s (%u clients)\n", (unsigned)usage, down ? "down" : "up",
 +		    _clients ? _clients->getCount() : 0);
 +		dispatchEvent(event);
 +		event->release();
@@ -21024,7 +21024,7 @@
 +	setProperty("SurfaceHeight", (unsigned long long)(151 << 16), 32);
 +	gNabuTouch = this;
 +	registerService();
-+	IOLog("NABU HID: touch registered\n");
++	IOLog("CEPHEUS HID: touch registered\n");
 +	return true;
 +}
 +
@@ -21035,7 +21035,7 @@
 +	IOHIDEvent *collection;
 +	bool any = false;
 +
-+	if (finger < 0 || finger >= NABU_TOUCH_FINGERS) {
++	if (finger < 0 || finger >= CEPHEUS_TOUCH_FINGERS) {
 +		return;
 +	}
 +	x = x < 0 ? 0 : (x > 1079 ? 1079 : x);
@@ -21059,7 +21059,7 @@
 +	collection->setIntegerValue(kIOHIDEventFieldDigitizerCollection, TRUE);
 +
 +	UInt32 cmask = 0;
-+	for (int i = 0; i < NABU_TOUCH_FINGERS; i++) {
++	for (int i = 0; i < CEPHEUS_TOUCH_FINGERS; i++) {
 +		bool d = (i == finger) ? down : fDown[i];
 +		if (i != finger && !d) {
 +			continue;
@@ -21106,7 +21106,7 @@
 +	IOLockUnlock(fLock);
 +
 +	if (was != down) {
-+		IOLog("NABU HID: touch %d %s at %d,%d\n", finger, down ? "down" : "up", x, y);
++		IOLog("CEPHEUS HID: touch %d %s at %d,%d\n", finger, down ? "down" : "up", x, y);
 +	}
 +	dispatchEvent(collection);
 +	collection->release();
@@ -21114,7 +21114,7 @@
 +
 +/* key: 0 power (side button), 1 volume up, 2 volume down, 3 home */
 +extern "C" void
-+nabu_hid_key(int key, int down)
++cepheus_hid_key(int key, int down)
 +{
 +	static const UInt32 usages[] = {
 +		kHIDUsage_Csmr_Power, kHIDUsage_Csmr_VolumeIncrement,
@@ -21127,7 +21127,7 @@
 +}
 +
 +extern "C" void
-+nabu_hid_touch(int finger, int down, int x, int y)
++cepheus_hid_touch(int finger, int down, int x, int y)
 +{
 +	if (gNabuTouch) {
 +		gNabuTouch->touch(finger, down != 0, x, y);

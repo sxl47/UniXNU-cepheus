@@ -4,22 +4,22 @@
  	return exception_triage_thread(exception, code, codeCnt, thread);
  }
  
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +#include <vm/vm_shared_region.h>
 +#include <arm/thread.h>
 +
 +/*
-+ * NABU crash report on the console. The phone has no way to get crash
++ * CEPHEUS crash report on the console. The phone has no way to get crash
 + * logs off the device, and corpses stop after a few crashes, so print what
 + * symbolication needs: user registers, a frame-pointer backtrace, the
 + * shared cache slide (unslid = pc - slide) and the main binary's Mach-O
 + * header (offset = pc - mh). Called from proc_prepareexit on the exiting
 + * (crashing) thread.
 + */
-+void nabu_crash_log(const char *name, int pid, int sig, uint64_t code, uint64_t subcode);
++void cepheus_crash_log(const char *name, int pid, int sig, uint64_t code, uint64_t subcode);
 +
 +void
-+nabu_crash_log(const char *name, int pid, int sig, uint64_t code, uint64_t subcode)
++cepheus_crash_log(const char *name, int pid, int sig, uint64_t code, uint64_t subcode)
 +{
 +	thread_t thread = current_thread();
 +	task_t task = current_task();
@@ -56,7 +56,7 @@
 +	}
 +	printf("%s\n", line);
 +}
-+#endif /* ARM64_BOARD_CONFIG_NABU */
++#endif /* ARM64_BOARD_CONFIG_CEPHEUS */
 +
  kern_return_t
  bsd_exception(
@@ -67,10 +67,10 @@
  		subcode = ut->uu_subcode;
  		etype = ut->uu_exception;
  
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +		if (p == current_proc()) {
-+			extern void nabu_crash_log(const char *, int, int, uint64_t, uint64_t);
-+			nabu_crash_log(p->p_comm, proc_getpid(p), WTERMSIG(rv),
++			extern void cepheus_crash_log(const char *, int, int, uint64_t, uint64_t);
++			cepheus_crash_log(p->p_comm, proc_getpid(p), WTERMSIG(rv),
 +			    ((uint64_t)ut->uu_exception << 32) | (uint32_t)ut->uu_code, ut->uu_subcode);
 +		}
 +#endif
@@ -88,7 +88,7 @@
  
  /* The system (device) bag handle. */
 @@ -209,6 +210,15 @@
- 		args->scalarOutput[0] = NABU_AKS_LOCK_STATE;
+ 		args->scalarOutput[0] = CEPHEUS_AKS_LOCK_STATE;
  		args->scalarOutputCount = 1;
  		break;
 +	case kAKSNotifyStateIsSet:
@@ -102,4 +102,4 @@
 +		break;
  	case kAKSGetDeviceState:
  		args->scalarOutputCount = 0;
- 		ret = nabu_aks_device_state(args);
+ 		ret = cepheus_aks_device_state(args);

@@ -5,9 +5,9 @@ diff --git a/osfmk/prng/prng_random.c b/osfmk/prng/prng_random.c
  		     .strictFIPS = 0,
  	     }};
  
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +/*
-+ * The corecrypto kext normally installs the kernel PRNG. NABU has no such
++ * The corecrypto kext normally installs the kernel PRNG. CEPHEUS has no such
 + * kext: use the built-in HMAC-SHA256 DRBG, just as early_random does. A
 + * single mutex serializes generation and reseeding across all CPUs. This
 + * favors a small, auditable bring-up implementation over per-CPU scaling.
@@ -15,129 +15,129 @@ diff --git a/osfmk/prng/prng_random.c b/osfmk/prng/prng_random.c
 + */
 +#include <kern/startup.h>
 +
-+static LCK_GRP_DECLARE(nabu_prng_group, "nabu-prng");
-+static LCK_MTX_DECLARE(nabu_prng_lock, &nabu_prng_group);
-+static struct cckprng_ctx nabu_prng_ctx;
-+static const struct ccdrbg_nisthmac_custom nabu_prng_custom = {
++static LCK_GRP_DECLARE(cepheus_prng_group, "cepheus-prng");
++static LCK_MTX_DECLARE(cepheus_prng_lock, &cepheus_prng_group);
++static struct cckprng_ctx cepheus_prng_ctx;
++static const struct ccdrbg_nisthmac_custom cepheus_prng_custom = {
 +	.di = &ccsha256_ltc_di,
 +	.strictFIPS = 0,
 +};
-+static cckprng_getentropy nabu_getentropy;
-+static void *nabu_getentropy_arg;
-+static unsigned nabu_max_ngens;
-+static bool nabu_generators[MAX_CPUS];
++static cckprng_getentropy cepheus_getentropy;
++static void *cepheus_getentropy_arg;
++static unsigned cepheus_max_ngens;
++static bool cepheus_generators[MAX_CPUS];
 +
 +static struct ccdrbg_state *
-+nabu_prng_state(struct cckprng_ctx *ctx)
++cepheus_prng_state(struct cckprng_ctx *ctx)
 +{
 +	return (struct ccdrbg_state *)ctx->drbg_state;
 +}
 +
 +static void
-+nabu_prng_check(int status)
++cepheus_prng_check(int status)
 +{
 +	if (status != CCDRBG_STATUS_OK) {
-+		panic("NABU HMAC DRBG error %d", status);
++		panic("CEPHEUS HMAC DRBG error %d", status);
 +	}
 +}
 +
 +static void
-+nabu_prng_init_with_getentropy(struct cckprng_ctx *ctx, unsigned max_ngens,
++cepheus_prng_init_with_getentropy(struct cckprng_ctx *ctx, unsigned max_ngens,
 +    size_t seed_nbytes, const void *seed, size_t nonce_nbytes, const void *nonce,
 +    cckprng_getentropy getentropy, void *getentropy_arg)
 +{
 +	assert(max_ngens > 0 && max_ngens <= MAX_CPUS);
-+	ccdrbg_factory_nisthmac(&ctx->drbg_info, &nabu_prng_custom);
++	ccdrbg_factory_nisthmac(&ctx->drbg_info, &cepheus_prng_custom);
 +	assert(ctx->drbg_info.size <= sizeof(ctx->drbg_state));
-+	const char ps[] = "xnu nabu kernel random";
-+	nabu_prng_check(ccdrbg_init(&ctx->drbg_info, nabu_prng_state(ctx),
++	const char ps[] = "xnu cepheus kernel random";
++	cepheus_prng_check(ccdrbg_init(&ctx->drbg_info, cepheus_prng_state(ctx),
 +	    seed_nbytes, seed, nonce_nbytes, nonce, sizeof(ps) - 1, ps));
-+	nabu_getentropy = getentropy;
-+	nabu_getentropy_arg = getentropy_arg;
-+	nabu_max_ngens = max_ngens;
++	cepheus_getentropy = getentropy;
++	cepheus_getentropy_arg = getentropy_arg;
++	cepheus_max_ngens = max_ngens;
 +}
 +
 +static void
-+nabu_prng_init(struct cckprng_ctx *ctx, size_t seed_nbytes, const void *seed,
++cepheus_prng_init(struct cckprng_ctx *ctx, size_t seed_nbytes, const void *seed,
 +    size_t nonce_nbytes, const void *nonce, cckprng_getentropy getentropy,
 +    void *getentropy_arg)
 +{
-+	nabu_prng_init_with_getentropy(ctx, MAX_CPUS, seed_nbytes, seed,
++	cepheus_prng_init_with_getentropy(ctx, MAX_CPUS, seed_nbytes, seed,
 +	    nonce_nbytes, nonce, getentropy, getentropy_arg);
 +}
 +
 +static void
-+nabu_prng_initgen(__unused struct cckprng_ctx *ctx, unsigned gen_idx)
++cepheus_prng_initgen(__unused struct cckprng_ctx *ctx, unsigned gen_idx)
 +{
-+	lck_mtx_lock(&nabu_prng_lock);
-+	assert(gen_idx < nabu_max_ngens);
-+	assert(!nabu_generators[gen_idx]);
-+	nabu_generators[gen_idx] = true;
-+	lck_mtx_unlock(&nabu_prng_lock);
++	lck_mtx_lock(&cepheus_prng_lock);
++	assert(gen_idx < cepheus_max_ngens);
++	assert(!cepheus_generators[gen_idx]);
++	cepheus_generators[gen_idx] = true;
++	lck_mtx_unlock(&cepheus_prng_lock);
 +}
 +
 +static void
-+nabu_prng_reseed(struct cckprng_ctx *ctx, size_t nbytes, const void *seed)
++cepheus_prng_reseed(struct cckprng_ctx *ctx, size_t nbytes, const void *seed)
 +{
-+	lck_mtx_lock(&nabu_prng_lock);
-+	nabu_prng_check(ccdrbg_reseed(&ctx->drbg_info, nabu_prng_state(ctx),
++	lck_mtx_lock(&cepheus_prng_lock);
++	cepheus_prng_check(ccdrbg_reseed(&ctx->drbg_info, cepheus_prng_state(ctx),
 +	    nbytes, seed, 0, NULL));
-+	lck_mtx_unlock(&nabu_prng_lock);
++	lck_mtx_unlock(&cepheus_prng_lock);
 +}
 +
 +static void
-+nabu_prng_refresh(struct cckprng_ctx *ctx)
++cepheus_prng_refresh(struct cckprng_ctx *ctx)
 +{
 +	/* The entropy callback also uses try-lock; refresh must not wait. */
-+	if (!lck_mtx_try_lock(&nabu_prng_lock)) {
++	if (!lck_mtx_try_lock(&cepheus_prng_lock)) {
 +		return;
 +	}
 +	uint8_t entropy[CCKPRNG_ENTROPY_SIZE];
 +	size_t nbytes = sizeof(entropy);
-+	int32_t nsamples = nabu_getentropy(&nbytes, entropy, nabu_getentropy_arg);
++	int32_t nsamples = cepheus_getentropy(&nbytes, entropy, cepheus_getentropy_arg);
 +	if (nsamples < 0) {
-+		panic("NABU PRNG entropy health test failed");
++		panic("CEPHEUS PRNG entropy health test failed");
 +	}
 +	if (nsamples >= 256) {
 +		assert(nbytes >= SEED_SIZE && nbytes <= sizeof(entropy));
-+		nabu_prng_check(ccdrbg_reseed(&ctx->drbg_info, nabu_prng_state(ctx),
++		cepheus_prng_check(ccdrbg_reseed(&ctx->drbg_info, cepheus_prng_state(ctx),
 +		    nbytes, entropy, 0, NULL));
 +	}
 +	cc_clear(sizeof(entropy), entropy);
-+	lck_mtx_unlock(&nabu_prng_lock);
++	lck_mtx_unlock(&cepheus_prng_lock);
 +}
 +
 +static void
-+nabu_prng_generate(struct cckprng_ctx *ctx, unsigned gen_idx,
++cepheus_prng_generate(struct cckprng_ctx *ctx, unsigned gen_idx,
 +    size_t nbytes, void *out)
 +{
 +	assert(nbytes <= CCKPRNG_GENERATE_MAX_NBYTES);
-+	lck_mtx_lock(&nabu_prng_lock);
-+	assert(gen_idx < nabu_max_ngens && nabu_generators[gen_idx]);
-+	nabu_prng_check(ccdrbg_generate(&ctx->drbg_info, nabu_prng_state(ctx),
++	lck_mtx_lock(&cepheus_prng_lock);
++	assert(gen_idx < cepheus_max_ngens && cepheus_generators[gen_idx]);
++	cepheus_prng_check(ccdrbg_generate(&ctx->drbg_info, cepheus_prng_state(ctx),
 +	    nbytes, out, 0, NULL));
-+	lck_mtx_unlock(&nabu_prng_lock);
++	lck_mtx_unlock(&cepheus_prng_lock);
 +}
 +
 +__startup_func
 +static void
-+nabu_prng_startup(void)
++cepheus_prng_startup(void)
 +{
 +	/* Ensure the boot seed exists before registration erases the early DRBG. */
 +	(void)early_random();
 +	const struct cckprng_funcs funcs = {
-+		.init = nabu_prng_init,
-+		.initgen = nabu_prng_initgen,
-+		.reseed = nabu_prng_reseed,
-+		.refresh = nabu_prng_refresh,
-+		.generate = nabu_prng_generate,
-+		.init_with_getentropy = nabu_prng_init_with_getentropy,
++		.init = cepheus_prng_init,
++		.initgen = cepheus_prng_initgen,
++		.reseed = cepheus_prng_reseed,
++		.refresh = cepheus_prng_refresh,
++		.generate = cepheus_prng_generate,
++		.init_with_getentropy = cepheus_prng_init_with_getentropy,
 +	};
-+	register_and_init_prng(&nabu_prng_ctx, &funcs);
-+	kprintf("NABU PRNG: HMAC-SHA256 registered\n");
++	register_and_init_prng(&cepheus_prng_ctx, &funcs);
++	kprintf("CEPHEUS PRNG: HMAC-SHA256 registered\n");
 +}
-+STARTUP(EARLY_BOOT, STARTUP_RANK_FIRST, nabu_prng_startup);
-+#endif /* NABU */
++STARTUP(EARLY_BOOT, STARTUP_RANK_FIRST, cepheus_prng_startup);
++#endif /* CEPHEUS */
 +
  static void read_erandom(void * buf, size_t nbytes);
  
@@ -146,7 +146,7 @@ diff --git a/osfmk/prng/prng_random.c b/osfmk/prng/prng_random.c
  write_random(void * buffer, u_int numbytes)
  {
  	uint8_t seed[SHA256_DIGEST_LENGTH];
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +	/* Hash without depending on the absent corecrypto kext's dispatch table. */
 +	const struct ccdigest_info *di = &ccsha256_ltc_di;
 +	ccdigest_di_decl(di, ctx);
@@ -172,7 +172,7 @@ diff --git a/osfmk/prng/entropy.c b/osfmk/prng/entropy.c
  #include <machine/machine_routines.h>
  #include <libkern/section_keywords.h>
  #include <sys/cdefs.h>
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +#include <corecrypto/ccdigest.h>
 +#include <corecrypto/ccsha2.h>
 +#endif
@@ -183,7 +183,7 @@ diff --git a/osfmk/prng/entropy.c b/osfmk/prng/entropy.c
  	// State for a SHA256 computation. This is used to accumulate
  	// entropy samples from across all CPUs. It is finalized when
  	// entropy is provided to the consumer of this module.
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +	ccdigest_ctx_decl(CCSHA256_STATE_SIZE, CCSHA256_BLOCK_SIZE, sha256_ctx);
 +#else
  	SHA256_CTX sha256_ctx;
@@ -204,11 +204,11 @@ diff --git a/osfmk/prng/entropy.c b/osfmk/prng/entropy.c
  	return result;
  }
  
-+/* NABU uses the same built-in digest as early_random, without a kext. */
++/* CEPHEUS uses the same built-in digest as early_random, without a kext. */
 +static void
 +entropy_hash_init(void)
 +{
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +	ccdigest_init(&ccsha256_ltc_di, entropy_data.sha256_ctx);
 +#else
 +	SHA256_Init(&entropy_data.sha256_ctx);
@@ -218,7 +218,7 @@ diff --git a/osfmk/prng/entropy.c b/osfmk/prng/entropy.c
 +static void
 +entropy_hash_update(const void *data, size_t nbytes)
 +{
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +	ccdigest_update(&ccsha256_ltc_di, entropy_data.sha256_ctx, nbytes, data);
 +#else
 +	SHA256_Update(&entropy_data.sha256_ctx, data, nbytes);
@@ -228,7 +228,7 @@ diff --git a/osfmk/prng/entropy.c b/osfmk/prng/entropy.c
 +static void
 +entropy_hash_final(void *out)
 +{
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +	ccdigest_final(&ccsha256_ltc_di, entropy_data.sha256_ctx, out);
 +	ccdigest_ctx_clear(CCSHA256_STATE_SIZE, CCSHA256_BLOCK_SIZE, entropy_data.sha256_ctx);
 +#else
@@ -247,8 +247,8 @@ diff --git a/osfmk/prng/entropy.c b/osfmk/prng/entropy.c
 -	// is being loaded. We require SHA256 to accumulate entropy
 -	// samples.
 +	// Apple platforms need the corecrypto kext's SHA256 implementation.
-+	// NABU links the digest into the kernel instead.
-+#if !defined(NABU)
++	// CEPHEUS links the digest into the kernel instead.
++#if !defined(CEPHEUS)
  	if (__improbable(!crypto_init)) {
  		return sample_count;
  	}

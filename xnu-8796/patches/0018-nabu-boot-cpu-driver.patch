@@ -4,13 +4,13 @@ new file mode 100644
 +++ b/iokit/Kernel/arm/NabuCPU.cpp
 @@ -0,0 +1,171 @@
 +/*
-+ * Single-CPU bring-up for nabu using XNU's legacy IOCPU interface.
++ * Single-CPU bring-up for cepheus using XNU's legacy IOCPU interface.
 + * The architected timer and SGI1 already enter through pe_fiq/sleh_irq.
 + * Secondary CPU startup and system suspend require separate platform work.
 + */
 +#include <pexpert/arm64/board_config.h>
 +
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +#include <IOKit/IOCPU.h>
 +#include <IOKit/IOLib.h>
 +#include <libkern/c++/OSData.h>
@@ -52,7 +52,7 @@ new file mode 100644
 +		return false;
 +	}
 +	if (topology->num_cpus != 1) {
-+		panic("NABU CPU: only single-CPU bring-up is supported");
++		panic("CEPHEUS CPU: only single-CPU bring-up is supported");
 +	}
 +	if (!IOCPU::start(provider)) {
 +		return false;
@@ -76,16 +76,16 @@ new file mode 100644
 +	perfmon_interrupt_handler_func pmi_handler = NULL;
 +	kern_return_t result = ml_processor_register(&info, &machProcessor, &ipi_handler, &pmi_handler);
 +	if (result != KERN_SUCCESS) {
-+		panic("NABU CPU: ml_processor_register failed: %d", result);
++		panic("CEPHEUS CPU: ml_processor_register failed: %d", result);
 +	}
 +	if (pmi_handler != NULL) {
-+		panic("NABU CPU: PMI routing is not implemented");
++		panic("CEPHEUS CPU: PMI routing is not implemented");
 +	}
 +
 +	/* Re-enter the boot CPU through cpu_machine_init -> PE_cpu_machine_init. */
 +	result = processor_start(machProcessor);
 +	if (result != KERN_SUCCESS || getCPUState() != kIOCPUStateRunning) {
-+		panic("NABU CPU: processor_start failed: %d", result);
++		panic("CEPHEUS CPU: processor_start failed: %d", result);
 +	}
 +	ml_cpu_init_completed();
 +	cpusRunning();
@@ -94,7 +94,7 @@ new file mode 100644
 +
 +	/* Announce completion only after registration, startup and SGI validation. */
 +	ml_set_max_cpus(topology->max_cpu_id + 1);
-+	IOLog("NABU CPU: boot CPU %u registered, SGI1 verified, initialization complete\n",
++	IOLog("CEPHEUS CPU: boot CPU %u registered, SGI1 verified, initialization complete\n",
 +	    getCPUNumber());
 +	return true;
 +}
@@ -110,7 +110,7 @@ new file mode 100644
 +NabuCPU::initCPU(bool boot)
 +{
 +	if (!boot) {
-+		panic("NABU CPU: resume is not implemented");
++		panic("CEPHEUS CPU: resume is not implemented");
 +	}
 +	assert(cpu_number() == (int)getCPUNumber());
 +	assert(ml_get_interrupts_enabled());
@@ -122,7 +122,7 @@ new file mode 100644
 +	signalCPU(this);
 +	while (!ml_cpu_signal_is_enabled()) {
 +		if (mach_absolute_time() > deadline) {
-+			panic("NABU CPU: SGI1 self-test timed out");
++			panic("CEPHEUS CPU: SGI1 self-test timed out");
 +		}
 +		__asm__ volatile("yield");
 +	}
@@ -134,17 +134,17 @@ new file mode 100644
 +{
 +	/* Only the boot CPU is registered by this driver. */
 +	if (target != this || cpu_number() != (int)getCPUNumber()) {
-+		panic("NABU CPU: secondary CPU signalling is not implemented");
++		panic("CEPHEUS CPU: secondary CPU signalling is not implemented");
 +	}
 +	uint64_t mpidr = __builtin_arm_rsr64("MPIDR_EL1");
 +	unsigned int aff0 = mpidr & 0xff;
 +	if (aff0 >= 16) {
-+		panic("NABU CPU: SGI target requires unsupported range selector");
++		panic("CEPHEUS CPU: SGI target requires unsupported range selector");
 +	}
 +	uint64_t sgi = (((mpidr >> 32) & 0xff) << 48) |
 +	    (((mpidr >> 16) & 0xff) << 32) |
 +	    (((mpidr >> 8) & 0xff) << 16) |
-+	    ((uint64_t)NABU_IPI_SGI << 24) | (1ULL << aff0);
++	    ((uint64_t)CEPHEUS_IPI_SGI << 24) | (1ULL << aff0);
 +	__builtin_arm_dsb(DSB_ISHST);
 +	__builtin_arm_wsr64("ICC_SGI1R_EL1", sgi);
 +	__builtin_arm_isb(ISB_SY);
@@ -159,13 +159,13 @@ new file mode 100644
 +void
 +NabuCPU::quiesceCPU(void)
 +{
-+	panic("NABU CPU: CPU quiesce is not implemented");
++	panic("CEPHEUS CPU: CPU quiesce is not implemented");
 +}
 +
 +void
 +NabuCPU::haltCPU(void)
 +{
-+	panic("NABU CPU: CPU halt/suspend is not implemented");
++	panic("CEPHEUS CPU: CPU halt/suspend is not implemented");
 +}
 +
 +const OSSymbol *
@@ -173,12 +173,12 @@ new file mode 100644
 +{
 +	return cpuName;
 +}
-+#endif /* NABU */
++#endif /* CEPHEUS */
 diff --git a/iokit/KernelConfigTables.cpp b/iokit/KernelConfigTables.cpp
 --- a/iokit/KernelConfigTables.cpp
 +++ b/iokit/KernelConfigTables.cpp
 @@ -41,6 +41,12 @@
-     "     'IONameMatch'     = 'xiaomi,nabu';"
+     "     'IONameMatch'     = 'xiaomi,cepheus';"
      "     'IOProbeScore'    = 10000:32;"
      "   },"
 +    "   {"
@@ -195,7 +195,7 @@ diff --git a/iokit/conf/files.arm64 b/iokit/conf/files.arm64
 +++ b/iokit/conf/files.arm64
 @@ -8,3 +8,5 @@
  
- # NABU device-tree platform (empty translation unit on other boards)
+ # CEPHEUS device-tree platform (empty translation unit on other boards)
  iokit/Kernel/arm/NabuPlatformExpert.cpp                         optional iokitcpp
 +
 +iokit/Kernel/arm/NabuCPU.cpp                                    optional iokitcpp

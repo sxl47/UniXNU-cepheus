@@ -28,7 +28,7 @@
  	case kAKSGetDeviceState:
 +	case kAKSGetExtDeviceState:
  		args->scalarOutputCount = 0;
- 		ret = nabu_aks_device_state(args);
+ 		ret = cepheus_aks_device_state(args);
  		break;
 --- a/osfmk/kern/exception.c
 +++ b/osfmk/kern/exception.c
@@ -50,10 +50,10 @@
  			uint64_t frame[2];
  			if (vm_map_read_user(map, fp, frame, sizeof(frame)) != KERN_SUCCESS) {
  				break;
---- a/bsd/dev/nabu_sample.c
-+++ b/bsd/dev/nabu_sample.c
+--- a/bsd/dev/cepheus_sample.c
++++ b/bsd/dev/cepheus_sample.c
 @@ -10,7 +10,7 @@
-  * with tools/nabu-crash.py). A thread blocked in a syscall shows the
+  * with tools/cepheus-crash.py). A thread blocked in a syscall shows the
   * syscall stub in pc and its caller in lr/bt.
   *
 - * First sample 90 s after start, then every 120 s, 10 samples at most.
@@ -64,9 +64,9 @@
 @@ -71,7 +71,7 @@
  		return;
  	}
- 	(void)tsleep(&chan, PZERO, "nabusmp", 90 * hz);
+ 	(void)tsleep(&chan, PZERO, "cepheussmp", 90 * hz);
 -	for (int i = 0; i < 10; i++) {
 +	for (int i = 0; i < 40; i++) {
  		printf("SMP --- sample %d\n", i);
- 		proc_iterate(PROC_ALLPROCLIST, nabu_sample_proc, NULL, NULL, NULL);
- 		(void)tsleep(&chan, PZERO, "nabusmp", 120 * hz);
+ 		proc_iterate(PROC_ALLPROCLIST, cepheus_sample_proc, NULL, NULL, NULL);
+ 		(void)tsleep(&chan, PZERO, "cepheussmp", 120 * hz);

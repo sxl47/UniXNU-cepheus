@@ -1,4 +1,4 @@
-nabu: drop KPI exports that only Apple's closed per-SoC library defines
+cepheus: drop KPI exports that only Apple's closed per-SoC library defines
 (DART/SART/UAT IOMMUs, NVMe PPL, pmap_iommu_*, IOUnifiedAddressTranslator).
 None of that hardware exists on SM7150; kextsymboltool rejects exports
 the kernel does not define. Verified with tools/check-exports.py.

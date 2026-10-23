@@ -3,30 +3,30 @@
 @@ -833,6 +833,7 @@
   * (crashing) thread.
   */
- void nabu_crash_log(const char *name, int pid, int sig, uint64_t code, uint64_t subcode);
-+static void nabu_crash_strings(const char *name);
+ void cepheus_crash_log(const char *name, int pid, int sig, uint64_t code, uint64_t subcode);
++static void cepheus_crash_strings(const char *name);
  
  void
- nabu_crash_log(const char *name, int pid, int sig, uint64_t code, uint64_t subcode)
+ cepheus_crash_log(const char *name, int pid, int sig, uint64_t code, uint64_t subcode)
 @@ -871,6 +872,103 @@
  		fp = frame[0];
  	}
  	printf("%s\n", line);
 +
 +	if (sig == 6) {
-+		nabu_crash_strings(name);
++		cepheus_crash_strings(name);
 +	}
 +}
 +
 +/*
-+ * NABU: for an aborting process named in boot-arg nabuscan (comma
++ * CEPHEUS: for an aborting process named in boot-arg cepheusscan (comma
 + * separated, default "backboardd"; "-" = off) print the printable text runs
 + * (>= 24 characters, at least 2 spaces) found in its malloc heap as
 + * "STR text", at most 700 lines. An uncaught NSException's reason string
 + * is among them: the abort message only carries the exception's type.
 + */
 +static void
-+nabu_crash_strings(const char *name)
++cepheus_crash_strings(const char *name)
 +{
 +	static char names[128];
 +	char *buf;
@@ -36,7 +36,7 @@
 +	int lines = 0;
 +	char last[96] = "";
 +
-+	if (!PE_parse_boot_argn("nabuscan", names, sizeof(names))) {
++	if (!PE_parse_boot_argn("cepheusscan", names, sizeof(names))) {
 +		strlcpy(names, "backboardd", sizeof(names));
 +	}
 +	size_t n = strlen(name), found = 0;
@@ -110,5 +110,5 @@
 +	printf("STR done: %llu KiB scanned, %d strings\n", scanned >> 10, lines);
 +	kfree_data(buf, 65536);
  }
- #endif /* ARM64_BOARD_CONFIG_NABU */
+ #endif /* ARM64_BOARD_CONFIG_CEPHEUS */
  

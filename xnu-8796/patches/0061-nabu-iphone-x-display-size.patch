@@ -1,22 +1,22 @@
 --- a/iokit/Kernel/arm/NabuFramebuffer.cpp
 +++ b/iokit/Kernel/arm/NabuFramebuffer.cpp
 @@ -61,7 +61,17 @@
- #define NABU_FB_NOTIFY_TYPES           8
- #define NABU_FB_NOTIFY_VSYNC           5
- #define NABU_FB_VSYNC_US               16667
--#define NABU_FB_DOT_PITCH              395     /* ppi, 6.67" 1080x2400 */
-+#define NABU_FB_DOT_PITCH              458     /* ppi, as the iPhone X panel */
+ #define CEPHEUS_FB_NOTIFY_TYPES           8
+ #define CEPHEUS_FB_NOTIFY_VSYNC           5
+ #define CEPHEUS_FB_VSYNC_US               16667
+-#define CEPHEUS_FB_DOT_PITCH              395     /* ppi, 6.67" 1080x2400 */
++#define CEPHEUS_FB_DOT_PITCH              458     /* ppi, as the iPhone X panel */
 +/*
 + * The iOS userland only has status bar / layout data for real iPhone
 + * screens (UIKit: "No status bar visual provider for screen", the red
 + * rdar://45025538 bar for 360x800 points). The display is therefore
 + * presented as the iPhone X panel, 1125x2436 (375x812 points @3x), and the
 + * centered 1080x2400 part of it is shown on the 1080x2400 panel.
-+ * Boot-arg nabufb_native=1 presents the real panel size instead.
++ * Boot-arg cepheusfb_native=1 presents the real panel size instead.
 + */
-+#define NABU_FB_LOGICAL_W              1125
-+#define NABU_FB_LOGICAL_H              2436
- #define NABU_FB_FORMAT_BGRA            0x42475241
++#define CEPHEUS_FB_LOGICAL_W              1125
++#define CEPHEUS_FB_LOGICAL_H              2436
+ #define CEPHEUS_FB_FORMAT_BGRA            0x42475241
  
  class IOMobileFramebuffer : public IOService {
 @@ -84,6 +94,8 @@
@@ -29,29 +29,29 @@
  	IOMemoryMap  *fMap;
  	NabuSurface *fSurface;         /* the panel memory as an IOSurface */
 @@ -144,6 +156,16 @@
- 		IOLog("NABU FB: no boot framebuffer\n");
+ 		IOLog("CEPHEUS FB: no boot framebuffer\n");
  		return false;
  	}
 +	int native = 0;
-+	PE_parse_boot_argn("nabufb_native", &native, sizeof(native));
++	PE_parse_boot_argn("cepheusfb_native", &native, sizeof(native));
 +	fLogicalW = fWidth;
 +	fLogicalH = fHeight;
-+	if (!native && fWidth <= NABU_FB_LOGICAL_W && fHeight <= NABU_FB_LOGICAL_H) {
-+		fLogicalW = NABU_FB_LOGICAL_W;
-+		fLogicalH = NABU_FB_LOGICAL_H;
++	if (!native && fWidth <= CEPHEUS_FB_LOGICAL_W && fHeight <= CEPHEUS_FB_LOGICAL_H) {
++		fLogicalW = CEPHEUS_FB_LOGICAL_W;
++		fLogicalH = CEPHEUS_FB_LOGICAL_H;
 +	}
 +	fOffX = (int32_t)(fLogicalW - fWidth) / 2;
 +	fOffY = (int32_t)(fLogicalH - fHeight) / 2;
  	fLock = IOLockAlloc();
  	fClients = OSArray::withCapacity(4);
- 	fSurface = nabu_surface_create_physical(fPhys, fWidth, fHeight, fRowBytes, NABU_FB_FORMAT_BGRA);
+ 	fSurface = cepheus_surface_create_physical(fPhys, fWidth, fHeight, fRowBytes, CEPHEUS_FB_FORMAT_BGRA);
 @@ -169,8 +191,8 @@
  	setProperty("external", false);
  	setProperty("DisplayPipePlaneBaseAlignment", 64ULL, 32);
  	registerService();
--	IOLog("NABU FB: AppleCLCD %ux%u stride %u at 0x%llx, default surface %u\n",
+-	IOLog("CEPHEUS FB: AppleCLCD %ux%u stride %u at 0x%llx, default surface %u\n",
 -	    fWidth, fHeight, fRowBytes, fPhys, fSurface->id);
-+	IOLog("NABU FB: AppleCLCD %ux%u stride %u at 0x%llx, default surface %u, presented as %ux%u\n",
++	IOLog("CEPHEUS FB: AppleCLCD %ux%u stride %u at 0x%llx, default surface %u, presented as %ux%u\n",
 +	    fWidth, fHeight, fRowBytes, fPhys, fSurface->id, fLogicalW, fLogicalH);
  	return true;
  }
@@ -94,15 +94,15 @@
  private:
  	IOLock *fLock;
 +	int fLogicalW, fLogicalH, fOffX, fOffY;
- 	bool fDown[NABU_TOUCH_FINGERS];
- 	IOFixed fX[NABU_TOUCH_FINGERS];
- 	IOFixed fY[NABU_TOUCH_FINGERS];
+ 	bool fDown[CEPHEUS_TOUCH_FINGERS];
+ 	IOFixed fX[CEPHEUS_TOUCH_FINGERS];
+ 	IOFixed fY[CEPHEUS_TOUCH_FINGERS];
 @@ -422,6 +423,12 @@
  	if (!fLock || !IOHIDEventService::start(provider)) {
  		return false;
  	}
 +	int native = 0;
-+	PE_parse_boot_argn("nabufb_native", &native, sizeof(native));
++	PE_parse_boot_argn("cepheusfb_native", &native, sizeof(native));
 +	fLogicalW = native ? 1080 : 1125;
 +	fLogicalH = native ? 2400 : 2436;
 +	fOffX = (fLogicalW - 1080) / 2;

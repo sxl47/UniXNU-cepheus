@@ -1,5 +1,5 @@
---- a/bsd/dev/nabu_usb.c
-+++ b/bsd/dev/nabu_usb.c
+--- a/bsd/dev/cepheus_usb.c
++++ b/bsd/dev/cepheus_usb.c
 @@ -498,10 +498,19 @@
  	uint32_t len = UD_FRAME_MAX - (t[2] & 0xffffff);
  	ud_sync(UD_RX, UD_FRAME_MAX);

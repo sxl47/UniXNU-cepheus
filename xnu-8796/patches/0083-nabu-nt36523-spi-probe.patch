@@ -1,16 +1,16 @@
-diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
---- a/bsd/dev/nabu_touch.c
-+++ b/bsd/dev/nabu_touch.c
+diff --git a/bsd/dev/cepheus_touch.c b/bsd/dev/cepheus_touch.c
+--- a/bsd/dev/cepheus_touch.c
++++ b/bsd/dev/cepheus_touch.c
 @@ -1,11 +1,19 @@
  /*
-- * NABU SE7 FIFO I2C / GT9896 Yellowstone / Focaltech 54:52 bring-up.
+- * CEPHEUS SE7 FIFO I2C / GT9896 Yellowstone / Focaltech 54:52 bring-up.
 - * Call once after the scheduler is running; all work runs on one thread.
-- * Requires ABL-loaded GENI I2C firmware; votes L11C through nabu_rpmh.c.
+- * Requires ABL-loaded GENI I2C firmware; votes L11C through cepheus_rpmh.c.
 - * No firmware/config upload or direct PMIC writes. Only IC data write:
 - * zero to GT9896's event status after reading a report. See touch2/report.md.
-+ * NABU NT36523 SPI bring-up.
++ * CEPHEUS NT36523 SPI bring-up.
 + *
-+ * Board facts from the live nabu DTB:
++ * Board facts from the live cepheus DTB:
 + *   SPI SE18  0x00c84000 (size 0x4000), QUPv3_2 wrapper 0x00cc0000
 + *   clocks    GCC QUPV3_WRAP2_S1 + WRAP2 M/S AHB, RCG 0x1e278
 + *   pins      GPIO23/24/25 (qup18), GPIO26 CS (qup18), GPIO39 IRQ
@@ -21,7 +21,7 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 + *
 + * SPDX-License-Identifier: BSD-2-Clause-Patent
   */
- #if defined(ARM64_BOARD_CONFIG_NABU)
+ #if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +
  #include <sys/param.h>
  #include <sys/systm.h>
@@ -30,15 +30,15 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
  #include <machine/machine_routines.h>
  #include <pexpert/pexpert.h>
  
-+#include "nabu_geni_spi.h"
-+#include "nabu_nt36523.h"
++#include "cepheus_geni_spi.h"
++#include "cepheus_nt36523.h"
 +
  extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
 -/* Mach MIG declaration is not included by BSD's exported thread.h. */
  extern kern_return_t thread_terminate(thread_t);
- extern int nabu_rpmh_vreg_enable(const char *res, unsigned mv);
- extern void nabu_hid_touch(int finger, int down, int x, int y);
- void nabu_touch_init(void);
+ extern int cepheus_rpmh_vreg_enable(const char *res, unsigned mv);
+ extern void cepheus_hid_touch(int finger, int down, int x, int y);
+ void cepheus_touch_init(void);
  
 -#define TOUCH_SE_PA      0x00a84000u
 -#define TOUCH_GCC_PA     0x00100000u
@@ -50,7 +50,7 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -#define TOUCH_MAX        10u
 -#define TOUCH_GOODIX     1
 -#define TOUCH_FTS        2
--/* GT9896 is Yellowstone in Xiaomi nabu-r-oss, not the Berlin protocol. */
+-/* GT9896 is Yellowstone in Xiaomi cepheus-r-oss, not the Berlin protocol. */
 -#define GOODIX_PID_REG   0x4022u
 -#define GOODIX_EVENT_REG 0x4180u
 -#define GOODIX_HEAD_LEN  8u
@@ -97,35 +97,35 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -	unsigned sent, got;
 -	int x[TOUCH_MAX], y[TOUCH_MAX];
 -} st;
-+#define NABU_GCC_PA        0x00100000u
-+#define NABU_TLMM_PA       0x03000000u
-+#define NABU_TLMM_SIZE     0x00060000u  /* through GPIO90 at 0x5a000 */
-+#define NABU_SE_PA         0x00c84000u
-+#define NABU_QUP_PA        0x00cc0000u
++#define CEPHEUS_GCC_PA        0x00100000u
++#define CEPHEUS_TLMM_PA       0x03000000u
++#define CEPHEUS_TLMM_SIZE     0x00060000u  /* through GPIO90 at 0x5a000 */
++#define CEPHEUS_SE_PA         0x00c84000u
++#define CEPHEUS_QUP_PA        0x00cc0000u
 +
-+#define NABU_GCC_VOTE      0x00052014u
-+#define NABU_GCC_RCG       0x0001e278u
-+#define NABU_GCC_M_AHB     0x0001e004u
-+#define NABU_GCC_S_AHB     0x0001e008u
-+#define NABU_GCC_SE_HALT   0x0001e274u
++#define CEPHEUS_GCC_VOTE      0x00052014u
++#define CEPHEUS_GCC_RCG       0x0001e278u
++#define CEPHEUS_GCC_M_AHB     0x0001e004u
++#define CEPHEUS_GCC_S_AHB     0x0001e008u
++#define CEPHEUS_GCC_SE_HALT   0x0001e274u
 +
-+#define NABU_TLMM_GPIO(n)  ((uint32_t)(n) * 0x1000u)
-+#define NABU_TLMM_IO(n)    (NABU_TLMM_GPIO(n) + 4u)
++#define CEPHEUS_TLMM_GPIO(n)  ((uint32_t)(n) * 0x1000u)
++#define CEPHEUS_TLMM_IO(n)    (CEPHEUS_TLMM_GPIO(n) + 4u)
 +
-+#define NABU_SE_IRQ_STATUS 0x610u
-+#define NABU_SE_STATUS     0x40u
-+#define NABU_SE_TX_COUNT   0x800u
-+#define NABU_SE_RX_COUNT   0x804u
++#define CEPHEUS_SE_IRQ_STATUS 0x610u
++#define CEPHEUS_SE_STATUS     0x40u
++#define CEPHEUS_SE_TX_COUNT   0x800u
++#define CEPHEUS_SE_RX_COUNT   0x804u
 +
 +/* Hardware mux indices for SM8150 pin groups:
 + * gpio23/24/25/26 = {gpio, cci_timer2, qup18, ...}; gpio39 = {gpio, ...}. */
-+#define NABU_MUX_GPIO   0u
-+#define NABU_MUX_QUP18  2u
++#define CEPHEUS_MUX_GPIO   0u
++#define CEPHEUS_MUX_QUP18  2u
 +
-+#define NABU_TOUCH_IRQ_GPIO 39u
-+#define NABU_TOUCH_PWR_GPIO 90u
++#define CEPHEUS_TOUCH_IRQ_GPIO 39u
++#define CEPHEUS_TOUCH_PWR_GPIO 90u
 +
-+struct nabu_touch_state {
++struct cepheus_touch_state {
 +	vm_offset_t gcc;
 +	vm_offset_t tlmm;
 +	vm_offset_t se;
@@ -136,7 +136,7 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 +	bool mapped;
 +};
 +
-+static struct nabu_touch_state ts;
++static struct cepheus_touch_state ts;
  static int touch_sleep_chan;
  
  static uint32_t
@@ -204,8 +204,8 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 +nbu_pin(unsigned pin, unsigned func, unsigned pull, unsigned drive,
 +    int output, int level)
 +{
-+	uint32_t ctl_off = NABU_TLMM_GPIO(pin);
-+	uint32_t io_off = NABU_TLMM_IO(pin);
++	uint32_t ctl_off = CEPHEUS_TLMM_GPIO(pin);
++	uint32_t io_off = CEPHEUS_TLMM_IO(pin);
 +	uint32_t cfg;
 +
 +	if (!ts.tlmm) {
@@ -235,28 +235,28 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 +		uint32_t off;
 +		const char *name;
 +	} branches[] = {
-+		{ NABU_GCC_M_AHB, "m_ahb" },
-+		{ NABU_GCC_S_AHB, "s_ahb" },
-+		{ NABU_GCC_SE_HALT, "se18" },
++		{ CEPHEUS_GCC_M_AHB, "m_ahb" },
++		{ CEPHEUS_GCC_S_AHB, "s_ahb" },
++		{ CEPHEUS_GCC_SE_HALT, "se18" },
 +	};
 +	uint32_t vote, rcg, cfg, dfs;
 +	bool ok = true;
 +
-+	vote = nbu_rd(ts.gcc, NABU_GCC_VOTE);
-+	nbu_wr(ts.gcc, NABU_GCC_VOTE, vote | (1u << 1) | (1u << 2) | (1u << 5));
-+	rcg = nbu_rd(ts.gcc, NABU_GCC_RCG);
-+	cfg = nbu_rd(ts.gcc, NABU_GCC_RCG + 4u);
-+	dfs = nbu_rd(ts.gcc, NABU_GCC_RCG + 0x14u);
-+	printf("NABU TOUCH: gcc vote %#x -> %#x rcg=%#x cfg=%#x dfs=%#x\n",
-+	    vote, nbu_rd(ts.gcc, NABU_GCC_VOTE), rcg, cfg, dfs);
++	vote = nbu_rd(ts.gcc, CEPHEUS_GCC_VOTE);
++	nbu_wr(ts.gcc, CEPHEUS_GCC_VOTE, vote | (1u << 1) | (1u << 2) | (1u << 5));
++	rcg = nbu_rd(ts.gcc, CEPHEUS_GCC_RCG);
++	cfg = nbu_rd(ts.gcc, CEPHEUS_GCC_RCG + 4u);
++	dfs = nbu_rd(ts.gcc, CEPHEUS_GCC_RCG + 0x14u);
++	printf("CEPHEUS TOUCH: gcc vote %#x -> %#x rcg=%#x cfg=%#x dfs=%#x\n",
++	    vote, nbu_rd(ts.gcc, CEPHEUS_GCC_VOTE), rcg, cfg, dfs);
 +
 +	if (!(dfs & 1u)) {
 +		uint32_t newcfg = (cfg & ~(0x371fu | (1u << 20))) | 1u;
 +		bool updated = false;
-+		nbu_wr(ts.gcc, NABU_GCC_RCG + 4u, newcfg);
-+		nbu_wr(ts.gcc, NABU_GCC_RCG, rcg | 1u);
++		nbu_wr(ts.gcc, CEPHEUS_GCC_RCG + 4u, newcfg);
++		nbu_wr(ts.gcc, CEPHEUS_GCC_RCG, rcg | 1u);
 +		for (unsigned i = 0; i < 1000; i++) {
-+			if (!(nbu_rd(ts.gcc, NABU_GCC_RCG) & 1u)) {
++			if (!(nbu_rd(ts.gcc, CEPHEUS_GCC_RCG) & 1u)) {
 +				updated = true;
 +				break;
 +			}
@@ -290,16 +290,16 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -	touch_wr(st.gcc, TOUCH_GCC_VOTE, touch_rd(st.gcc, TOUCH_GCC_VOTE) | mask);
 -	uint32_t dfs = touch_rd(st.gcc, TOUCH_RCG + 0x14u);
 -	uint32_t cfg = touch_rd(st.gcc, TOUCH_RCG + 4u);
--	printf("NABU TOUCH: gcc vote=%#x rcg=%#x cfg=%#x dfs=%#x\n",
+-	printf("CEPHEUS TOUCH: gcc vote=%#x rcg=%#x cfg=%#x dfs=%#x\n",
 -	    touch_rd(st.gcc, TOUCH_GCC_VOTE), touch_rd(st.gcc, TOUCH_RCG), cfg, dfs);
 -	if (dfs & 1u) {
 -		/* SE CLK_SEL=0 selects DFS performance level 0. Do not alter tables. */
 -		cfg = touch_rd(st.gcc, TOUCH_RCG + 0x1cu);
 -		if ((cfg & 0x371fu) != 1u) {
--			printf("NABU TOUCH: DFS level0=%#x is not XO/1; need clock integration\n", cfg);
+-			printf("CEPHEUS TOUCH: DFS level0=%#x is not XO/1; need clock integration\n", cfg);
 -			return false;
-+		printf("NABU TOUCH: rcg cfg=%#x update=%d\n",
-+		    nbu_rd(ts.gcc, NABU_GCC_RCG + 4u), updated);
++		printf("CEPHEUS TOUCH: rcg cfg=%#x update=%d\n",
++		    nbu_rd(ts.gcc, CEPHEUS_GCC_RCG + 4u), updated);
 +		if (!updated) {
 +			ok = false;
  		}
@@ -309,9 +309,9 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -		touch_wr(st.gcc, TOUCH_RCG + 4u, cfg);
 -		touch_wr(st.gcc, TOUCH_RCG, touch_rd(st.gcc, TOUCH_RCG) | 1u);
 -		if (!touch_wait_clear(st.gcc, TOUCH_RCG, 1u)) {
--			printf("NABU TOUCH: RCG update timeout\n");
+-			printf("CEPHEUS TOUCH: RCG update timeout\n");
 -			return false;
-+		printf("NABU TOUCH: rcg uses DFS, not rewriting tables\n");
++		printf("CEPHEUS TOUCH: rcg uses DFS, not rewriting tables\n");
 +	}
 +
 +	for (unsigned i = 0; i < sizeof(branches) / sizeof(branches[0]); i++) {
@@ -329,10 +329,10 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -	const uint32_t branches[] = {0x18004, 0x18008, 0x1800c, 0x18010, 0x18144};
 -	for (unsigned i = 0; i < sizeof(branches) / sizeof(branches[0]); ++i) {
 -		if (!touch_wait_clear(st.gcc, branches[i], 1u << 31)) {
--			printf("NABU TOUCH: GCC branch %#x halted (%#x)\n", branches[i],
+-			printf("CEPHEUS TOUCH: GCC branch %#x halted (%#x)\n", branches[i],
 -			    touch_rd(st.gcc, branches[i]));
 -			return false;
-+		printf("NABU TOUCH: branch %s=%#x running=%d\n",
++		printf("CEPHEUS TOUCH: branch %s=%#x running=%d\n",
 +		    branches[i].name, v, running);
 +		if (!running) {
 +			ok = false;
@@ -358,7 +358,7 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 +	ts.spi.poll_only = 1;
 +
 +	r = geni_spi_read_info(&ts.spi);
-+	printf("NABU TOUCH: geni info r=%d fw=%#x proto=%u fifo_dis=%d depth=%u width=%u qup=%#x\n",
++	printf("CEPHEUS TOUCH: geni info r=%d fw=%#x proto=%u fifo_dis=%d depth=%u width=%u qup=%#x\n",
 +	    r, ts.spi.info.fw_revision, ts.spi.info.protocol,
 +	    ts.spi.info.fifo_disabled, ts.spi.info.tx_fifo_depth,
 +	    ts.spi.info.fifo_width_bits, ts.spi.info.qup_hw_version);
@@ -366,23 +366,23 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 +		return false;
 +	}
 +	if (ts.spi.info.protocol != GENI_PROTO_SPI) {
-+		printf("NABU TOUCH: SE18 is not in SPI protocol mode\n");
++		printf("CEPHEUS TOUCH: SE18 is not in SPI protocol mode\n");
 +		return false;
 +	}
 +	if (ts.spi.info.tx_fifo_depth < 4 || ts.spi.info.fifo_width_bits != 32) {
-+		printf("NABU TOUCH: unexpected FIFO geometry\n");
++		printf("CEPHEUS TOUCH: unexpected FIFO geometry\n");
 +		return false;
 +	}
 +
 +	r = geni_spi_init(&ts.spi);
-+	printf("NABU TOUCH: geni init=%d status=%#x\n", r,
-+	    nbu_rd(ts.se, NABU_SE_STATUS));
++	printf("CEPHEUS TOUCH: geni init=%d status=%#x\n", r,
++	    nbu_rd(ts.se, CEPHEUS_SE_STATUS));
 +	if (r != 0) {
 +		return false;
 +	}
 +	geni_spi_setup(&ts.spi, 0, 0);
 +	r = geni_spi_set_clock(&ts.spi, 9600000, 19200000, 0);
-+	printf("NABU TOUCH: geni clock=%d clk_sel=%#x mclk=%#x\n", r,
++	printf("CEPHEUS TOUCH: geni clock=%d clk_sel=%#x mclk=%#x\n", r,
 +	    nbu_rd(ts.se, 0x7c), nbu_rd(ts.se, 0x48));
 +	return r == 0;
 +}
@@ -391,7 +391,7 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 +nbu_read_trim(uint32_t addr, uint8_t id[6])
 +{
 +	int r = nvt_read_trim_id(&ts.bus, addr, id);
-+	printf("NABU TOUCH: trim @%#x r=%d id=%02x %02x %02x %02x %02x %02x\n",
++	printf("CEPHEUS TOUCH: trim @%#x r=%d id=%02x %02x %02x %02x %02x %02x\n",
 +	    addr, r, id[0], id[1], id[2], id[3], id[4], id[5]);
 +	return r;
 +}
@@ -408,19 +408,19 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 +	{
 +		uint8_t v = 0x5a;
 +		r = nvt_write_addr(&ts.bus, 0x7fff80u, &v, 1);
-+		printf("NABU TOUCH: eng reset r=%d\n", r);
++		printf("CEPHEUS TOUCH: eng reset r=%d\n", r);
 +	}
 +	delay(1000);
 +	{
 +		uint8_t v = 0x69;
 +		r = nvt_write_addr(&ts.bus, 0x3f0feu, &v, 1);
-+		printf("NABU TOUCH: bootloader reset r=%d\n", r);
++		printf("CEPHEUS TOUCH: bootloader reset r=%d\n", r);
 +	}
 +	delay(5000);
 +	{
 +		uint8_t v = 0;
 +		r = nvt_write_addr(&ts.bus, 0x3f310u, &v, 1);
-+		printf("NABU TOUCH: fast-read disable r=%d\n", r);
++		printf("CEPHEUS TOUCH: fast-read disable r=%d\n", r);
 +	}
 +	delay(5000);
 +
@@ -429,20 +429,20 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 +		r = nbu_read_trim(0x1f64eu, id);
 +	}
 +	if (r != 0 || !nvt_match_nt36523(id)) {
-+		printf("NABU TOUCH: no NT36523 trim id; irq=%#x status=%#x tx=%#x rx=%#x\n",
-+		    nbu_rd(ts.se, NABU_SE_IRQ_STATUS),
-+		    nbu_rd(ts.se, NABU_SE_STATUS),
-+		    nbu_rd(ts.se, NABU_SE_TX_COUNT),
-+		    nbu_rd(ts.se, NABU_SE_RX_COUNT));
++		printf("CEPHEUS TOUCH: no NT36523 trim id; irq=%#x status=%#x tx=%#x rx=%#x\n",
++		    nbu_rd(ts.se, CEPHEUS_SE_IRQ_STATUS),
++		    nbu_rd(ts.se, CEPHEUS_SE_STATUS),
++		    nbu_rd(ts.se, CEPHEUS_SE_TX_COUNT),
++		    nbu_rd(ts.se, CEPHEUS_SE_RX_COUNT));
 +		return false;
 +	}
-+	printf("NABU TOUCH: NT36523 identified\n");
++	printf("CEPHEUS TOUCH: NT36523 identified\n");
 +
 +	r = nvt_read_addr(&ts.bus, 0x2fe78u, fw, sizeof(fw));
-+	printf("NABU TOUCH: fwinfo r=%d\n", r);
++	printf("CEPHEUS TOUCH: fwinfo r=%d\n", r);
 +	if (r == 0) {
 +		(void)nvt_parse_fwinfo(fw, sizeof(fw), &info);
-+		printf("NABU TOUCH: fw=%u/%u valid=%d x_num=%u y_num=%u max=%ux%u buttons=%u\n",
++		printf("CEPHEUS TOUCH: fw=%u/%u valid=%d x_num=%u y_num=%u max=%ux%u buttons=%u\n",
 +		    info.fw_ver, info.fw_type, info.valid, info.x_num,
 +		    info.y_num, info.max_x, info.max_y, info.max_buttons);
 +	}
@@ -464,7 +464,7 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -	}
 -	if (!done || !touch_wait_clear(st.se, SE_STATUS, 1u)) {
 -		st.dead = true;
--		printf("NABU TOUCH: abort failed status=%#x irq=%#x; stopping\n",
+-		printf("CEPHEUS TOUCH: abort failed status=%#x irq=%#x; stopping\n",
 -		    touch_rd(st.se, SE_STATUS), touch_rd(st.se, SE_IRQ));
 -	}
 -	/* Bound drain even if the hardware reports an impossible FIFO count. */
@@ -474,7 +474,7 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -	touch_wr(st.se, SE_IRQ_CLR, 0xffffffffu);
 -	if (touch_rd(st.se, SE_TX_COUNT) & 0xfffffffu) {
 -		st.dead = true;
--		printf("NABU TOUCH: TX FIFO not empty after abort; stopping\n");
+-		printf("CEPHEUS TOUCH: TX FIFO not empty after abort; stopping\n");
 -	}
 -}
 -
@@ -528,7 +528,7 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 +			n = nvt_parse_points(frame, 1600, 2560, contacts,
 +			    NVT_MAX_FINGERS);
 +			if (bad) {
-+				printf("NABU TOUCH: point read recovered after %u errors\n", bad);
++				printf("CEPHEUS TOUCH: point read recovered after %u errors\n", bad);
 +				bad = 0;
  			}
 -			if ((irq & SE_DONE) && !(touch_rd(st.se, SE_STATUS) & 1u) &&
@@ -538,11 +538,11 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -				return err;
 +			good++;
 +			if (n > 0) {
-+				printf("NABU TOUCH: frame %u contacts=%d f0=%02x %02x %02x %02x %02x %02x\n",
++				printf("CEPHEUS TOUCH: frame %u contacts=%d f0=%02x %02x %02x %02x %02x %02x\n",
 +				    i, n, frame[0], frame[1], frame[2], frame[3],
 +				    frame[4], frame[5]);
 +				for (int k = 0; k < n; k++) {
-+					printf("NABU TOUCH: point id=%d x=%d y=%d p=%d\n",
++					printf("CEPHEUS TOUCH: point id=%d x=%d y=%d p=%d\n",
 +					    contacts[k].id, contacts[k].x, contacts[k].y,
 +					    contacts[k].pressure);
 +				}
@@ -569,7 +569,7 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -				rx[st.got++] = (uint8_t)(word >> (8u * j));
 +		} else {
 +			if (bad++ == 0) {
-+				printf("NABU TOUCH: point read failed at frame %u\n", i);
++				printf("CEPHEUS TOUCH: point read failed at frame %u\n", i);
  			}
  		}
 -		/* DONE is checked after draining RX, so final short words aren't lost. */
@@ -602,7 +602,7 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -	st.sent = st.got = 0;
 -	int err = touch_msg_run(addr, tx, nt, rx, nr, stretch);
 -	if (st.probing) {
--		printf("NABU TOUCH: probe xfer addr=%#x %s len=%u stretch=%u err=%d irq=%#x seen=%#x tx=%u rx=%u status=%#x\n",
+-		printf("CEPHEUS TOUCH: probe xfer addr=%#x %s len=%u stretch=%u err=%d irq=%#x seen=%#x tx=%u rx=%u status=%#x\n",
 -		    addr, nr ? "read" : "write", nr ? nr : nt, stretch ? 1u : 0u,
 -		    err, st.irq_last, st.irq_status, st.sent, st.got,
 -		    touch_rd(st.se, SE_STATUS));
@@ -638,7 +638,7 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -{
 -	memset(buf, 0xa5, 32);
 -	int err = touch_read(0x5d, reg, true, buf, 32);
--	printf("NABU TOUCH: probe info reg=%#x len=32 err=%d irq=%#x seen=%#x\n",
+-	printf("CEPHEUS TOUCH: probe info reg=%#x len=32 err=%d irq=%#x seen=%#x\n",
 -	    reg, err, st.irq_last, st.irq_status);
 -	if (!err) {
 -		for (unsigned off = 0; off < 32; off += 16) {
@@ -646,7 +646,7 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -			for (unsigned j = 0; j < 16; ++j) {
 -				(void)snprintf(line + j * 3u, 4, "%02x ", buf[off + j]);
 -			}
--			printf("NABU TOUCH: probe raw %#x: %s\n", reg + off, line);
+-			printf("CEPHEUS TOUCH: probe raw %#x: %s\n", reg + off, line);
 -		}
 -	}
 -	return err;
@@ -678,12 +678,12 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -		uint32_t bit = 1u << id;
 -		if (mask & bit) {
 -			if (!(st.active & bit) || x[id] != st.x[id] || y[id] != st.y[id]) {
--				nabu_hid_touch((int)id, 1, x[id], y[id]);
+-				cepheus_hid_touch((int)id, 1, x[id], y[id]);
 -			}
 -			st.x[id] = x[id];
 -			st.y[id] = y[id];
 -		} else if (st.active & bit) {
--			nabu_hid_touch((int)id, 0, st.x[id], st.y[id]);
+-			cepheus_hid_touch((int)id, 0, st.x[id], st.y[id]);
 -		}
 -	}
 -	st.active = mask;
@@ -798,17 +798,17 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -{
 -	uint32_t fw = touch_rd(st.se, SE_FW);
 -	uint32_t tx = touch_rd(st.se, SE_HW_TX), rx = touch_rd(st.se, SE_HW_RX);
--	printf("NABU TOUCH: se7 fw=%#x proto=%u status=%#x tx=%#x rx=%#x ios=%#x\n",
+-	printf("CEPHEUS TOUCH: se7 fw=%#x proto=%u status=%#x tx=%#x rx=%#x ios=%#x\n",
 -	    fw, (fw >> 8) & 0xffu, touch_rd(st.se, SE_STATUS), tx, rx,
 -	    touch_rd(st.se, 0x908));
 -	if (((fw >> 8) & 0xffu) != 3u || (touch_rd(st.se, 0x64) & 1u) ||
 -	    ((tx >> 24) & 0x3fu) != 32u || ((rx >> 24) & 0x3fu) != 32u ||
 -	    ((tx >> 16) & 0x3fu) < 2u || ((rx >> 16) & 0x3fu) < 2u) {
--		printf("NABU TOUCH: need ABL-loaded I2C firmware and 32-bit FIFOs; probes skipped\n");
+-		printf("CEPHEUS TOUCH: need ABL-loaded I2C firmware and 32-bit FIFOs; probes skipped\n");
 -		return false;
 -	}
 -	if (touch_rd(st.se, SE_STATUS) & 0x1001u) {
--		printf("NABU TOUCH: SE7 already busy; probes skipped\n");
+-		printf("CEPHEUS TOUCH: SE7 already busy; probes skipped\n");
 -		return false;
 -	}
 -	touch_wr(st.se, 0xe18, 0); /* no GSI events */
@@ -834,18 +834,18 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -	touch_wr(st.se, 0x810, 0);
 -	touch_wr(st.se, 0x814, ((rx >> 16) & 0x3fu) - 1u);
 -	touch_wr(st.se, SE_IRQ_EN, SE_EVENTS);
--	printf("NABU TOUCH: packing tx=%#x/%#x rx=%#x/%#x gran=%#x\n",
+-	printf("CEPHEUS TOUCH: packing tx=%#x/%#x rx=%#x/%#x gran=%#x\n",
 -	    touch_rd(st.se, 0x260), touch_rd(st.se, 0x264),
 -	    touch_rd(st.se, 0x284), touch_rd(st.se, 0x288), touch_rd(st.se, 0x254));
 -	if (touch_rd(st.se, 0x260) != SE_PACK0 || touch_rd(st.se, 0x264) != SE_PACK1 ||
 -	    touch_rd(st.se, 0x284) != SE_PACK0 || touch_rd(st.se, 0x288) != SE_PACK1 ||
 -	    touch_rd(st.se, 0x254) != 0) {
--		printf("NABU TOUCH: packing readback mismatch; probes skipped\n");
+-		printf("CEPHEUS TOUCH: packing readback mismatch; probes skipped\n");
 -		return false;
 -	}
 -	if ((touch_rd(st.se, SE_TX_COUNT) & 0xfffffffu) ||
 -	    (touch_rd(st.se, SE_RX_COUNT) & 0x1ffffffu)) {
--		printf("NABU TOUCH: inherited FIFO data; probes skipped\n");
+-		printf("CEPHEUS TOUCH: inherited FIFO data; probes skipped\n");
 -		return false;
 -	}
 -	return true;
@@ -857,7 +857,7 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -	unsigned delay_s = 45;
 +		delay(20000);
 +	}
-+	printf("NABU TOUCH: polling done good=%u bad=%u\n", good, bad);
++	printf("CEPHEUS TOUCH: polling done good=%u bad=%u\n", good, bad);
 +}
 +
 +static void
@@ -869,28 +869,28 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
  	(void)arg;
  	(void)result;
 -	/*
--	 * Start late (boot-arg nabutouchdelay, seconds): if the bus access
+-	 * Start late (boot-arg cepheustouchdelay, seconds): if the bus access
 -	 * below hangs the SoC, the persistent log and the GUI got there first.
 -	 */
- 	(void)PE_parse_boot_argn("nabutouchdelay", &delay_s, sizeof(delay_s));
--	printf("NABU TOUCH: starting in %u s\n", delay_s);
+ 	(void)PE_parse_boot_argn("cepheustouchdelay", &delay_s, sizeof(delay_s));
+-	printf("CEPHEUS TOUCH: starting in %u s\n", delay_s);
 -	touch_wait(delay_s * 1000u);
--	printf("NABU TOUCH: mapping GCC/TLMM/SE7\n");
+-	printf("CEPHEUS TOUCH: mapping GCC/TLMM/SE7\n");
 -	st.gcc = ml_io_map(TOUCH_GCC_PA, 0x60000);
 -	st.gpio = ml_io_map(TOUCH_NORTH_PA, 0x5b000);
 -	st.se = ml_io_map(TOUCH_SE_PA, 0x4000);
 -	if (!st.gcc || !st.gpio || !st.se) {
--		printf("NABU TOUCH: MMIO mapping failed\n");
-+	printf("NABU TOUCH: NT36523 probe starting in %u s\n", delay_s);
+-		printf("CEPHEUS TOUCH: MMIO mapping failed\n");
++	printf("CEPHEUS TOUCH: NT36523 probe starting in %u s\n", delay_s);
 +	nbu_sleep_ms(delay_s * 1000u);
-+	printf("NABU TOUCH: mapping SE18/GCC/TLMM\n");
++	printf("CEPHEUS TOUCH: mapping SE18/GCC/TLMM\n");
 +
-+	ts.gcc = ml_io_map(NABU_GCC_PA, 0x60000);
-+	ts.tlmm = ml_io_map(NABU_TLMM_PA, NABU_TLMM_SIZE);
-+	ts.se = ml_io_map(NABU_SE_PA, 0x4000);
-+	ts.qup = ml_io_map(NABU_QUP_PA, 0x6000);
++	ts.gcc = ml_io_map(CEPHEUS_GCC_PA, 0x60000);
++	ts.tlmm = ml_io_map(CEPHEUS_TLMM_PA, CEPHEUS_TLMM_SIZE);
++	ts.se = ml_io_map(CEPHEUS_SE_PA, 0x4000);
++	ts.qup = ml_io_map(CEPHEUS_QUP_PA, 0x6000);
 +	if (!ts.gcc || !ts.tlmm || !ts.se || !ts.qup) {
-+		printf("NABU TOUCH: MMIO map failed gcc=%#lx tlmm=%#lx se=%#lx qup=%#lx\n",
++		printf("CEPHEUS TOUCH: MMIO map failed gcc=%#lx tlmm=%#lx se=%#lx qup=%#lx\n",
 +		    (unsigned long)ts.gcc, (unsigned long)ts.tlmm,
 +		    (unsigned long)ts.se, (unsigned long)ts.qup);
  		goto out;
@@ -898,36 +898,36 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -	if (!touch_clocks() || !touch_se_init()) {
 +	ts.mapped = true;
 +
-+	power_error = nabu_rpmh_vreg_enable("ldoc11", 3200);
-+	printf("NABU TOUCH: L11C vote=%d\n", power_error);
-+	nbu_pin(23, NABU_MUX_QUP18, 0, 2, 0, 0);
-+	nbu_pin(24, NABU_MUX_QUP18, 0, 2, 0, 0);
-+	nbu_pin(25, NABU_MUX_QUP18, 0, 2, 0, 0);
-+	nbu_pin(26, NABU_MUX_QUP18, 0, 2, 0, 0);
-+	nbu_pin(NABU_TOUCH_IRQ_GPIO, NABU_MUX_GPIO, 1, 2, 0, 0);
-+	nbu_pin(NABU_TOUCH_PWR_GPIO, NABU_MUX_GPIO, 0, 0, 1, 1);
-+	printf("NABU TOUCH: pins 23/24/25/26=%#x %#x %#x %#x irq39=%#x pwr90=%#x io39=%#x\n",
-+	    nbu_rd(ts.tlmm, NABU_TLMM_GPIO(23)), nbu_rd(ts.tlmm, NABU_TLMM_GPIO(24)),
-+	    nbu_rd(ts.tlmm, NABU_TLMM_GPIO(25)), nbu_rd(ts.tlmm, NABU_TLMM_GPIO(26)),
-+	    nbu_rd(ts.tlmm, NABU_TLMM_GPIO(39)), nbu_rd(ts.tlmm, NABU_TLMM_GPIO(90)),
-+	    nbu_rd(ts.tlmm, NABU_TLMM_IO(39)));
++	power_error = cepheus_rpmh_vreg_enable("ldoc11", 3200);
++	printf("CEPHEUS TOUCH: L11C vote=%d\n", power_error);
++	nbu_pin(23, CEPHEUS_MUX_QUP18, 0, 2, 0, 0);
++	nbu_pin(24, CEPHEUS_MUX_QUP18, 0, 2, 0, 0);
++	nbu_pin(25, CEPHEUS_MUX_QUP18, 0, 2, 0, 0);
++	nbu_pin(26, CEPHEUS_MUX_QUP18, 0, 2, 0, 0);
++	nbu_pin(CEPHEUS_TOUCH_IRQ_GPIO, CEPHEUS_MUX_GPIO, 1, 2, 0, 0);
++	nbu_pin(CEPHEUS_TOUCH_PWR_GPIO, CEPHEUS_MUX_GPIO, 0, 0, 1, 1);
++	printf("CEPHEUS TOUCH: pins 23/24/25/26=%#x %#x %#x %#x irq39=%#x pwr90=%#x io39=%#x\n",
++	    nbu_rd(ts.tlmm, CEPHEUS_TLMM_GPIO(23)), nbu_rd(ts.tlmm, CEPHEUS_TLMM_GPIO(24)),
++	    nbu_rd(ts.tlmm, CEPHEUS_TLMM_GPIO(25)), nbu_rd(ts.tlmm, CEPHEUS_TLMM_GPIO(26)),
++	    nbu_rd(ts.tlmm, CEPHEUS_TLMM_GPIO(39)), nbu_rd(ts.tlmm, CEPHEUS_TLMM_GPIO(90)),
++	    nbu_rd(ts.tlmm, CEPHEUS_TLMM_IO(39)));
 +	delay(10000);
 +
 +	if (!nbu_clocks()) {
-+		printf("NABU TOUCH: clock setup failed\n");
++		printf("CEPHEUS TOUCH: clock setup failed\n");
  		goto out;
  	}
--	printf("NABU TOUCH: TLMM reset=%#x irq=%#x vdd90=%#x; voting L11C through RPMh\n",
+-	printf("CEPHEUS TOUCH: TLMM reset=%#x irq=%#x vdd90=%#x; voting L11C through RPMh\n",
 -	    touch_rd(st.gpio, TOUCH_GPIO_IO(8)), touch_rd(st.gpio, TOUCH_GPIO_IO(9)),
 -	    touch_rd(st.gpio, TOUCH_GPIO_IO(90)));
 -	/* Keep the IC in reset while its rails settle; IRQ stays an input. */
 -	touch_gpio(9, 0, 3, 3, false, false); /* IRQ input, 8 mA, pull-up */
 -	touch_gpio(8, 0, 3, 3, true, false);
--	int power_error = nabu_rpmh_vreg_enable("ldoc11", 3200);
+-	int power_error = cepheus_rpmh_vreg_enable("ldoc11", 3200);
 -	if (power_error) {
--		printf("NABU TOUCH: L11C RPMh enable failed %d; probes skipped\n", power_error);
+-		printf("CEPHEUS TOUCH: L11C RPMh enable failed %d; probes skipped\n", power_error);
 +	if (!nbu_geni_init()) {
-+		printf("NABU TOUCH: GENI SPI init failed\n");
++		printf("CEPHEUS TOUCH: GENI SPI init failed\n");
  		goto out;
  	}
 -	touch_gpio(90, 0, 0, 0, true, true); /* board digital power enable */
@@ -942,23 +942,23 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -	uint8_t gid[32], legacy[32], fid1 = 0, fid2 = 0;
 -	st.probing = true;
 -	int ge = touch_probe_info(GOODIX_PID_REG, gid);
--	printf("NABU TOUCH: probe 0x5d err=%d pid=%02x%02x%02x%02x fw=%02x.%02x.%02x.%02x irq=%#x\n",
+-	printf("CEPHEUS TOUCH: probe 0x5d err=%d pid=%02x%02x%02x%02x fw=%02x.%02x.%02x.%02x irq=%#x\n",
 -	    ge, gid[0], gid[1], gid[2], gid[3], gid[8], gid[9], gid[10], gid[11], st.irq_status);
 -	(void)touch_probe_info(0x8240, legacy);
 -	int fe1 = touch_read(0x38, 0xa3, false, &fid1, 1);
 -	int fe2 = touch_read(0x38, 0x9f, false, &fid2, 1);
--	printf("NABU TOUCH: probe 0x38 err=%d/%d chip-id=%02x:%02x irq=%#x\n",
+-	printf("CEPHEUS TOUCH: probe 0x38 err=%d/%d chip-id=%02x:%02x irq=%#x\n",
 -	    fe1, fe2, fid1, fid2, st.irq_status);
 -	st.probing = false;
 -	bool goodix = !ge && gid[0] == '9' && gid[1] == '8' && gid[2] == '9' && gid[3] == '6';
 -	bool fts = !fe1 && !fe2 && fid1 == 0x54 && fid2 == 0x52;
 -	if (st.dead || goodix == fts) {
--		printf("NABU TOUCH: no unique supported IC (goodix=%d fts=%d dead=%d); stopping\n",
+-		printf("CEPHEUS TOUCH: no unique supported IC (goodix=%d fts=%d dead=%d); stopping\n",
 -		    goodix, fts, st.dead);
 -		goto out;
 -	}
 -	st.kind = goodix ? TOUCH_GOODIX : TOUCH_FTS;
--	printf("NABU TOUCH: selected %s, 1080x2400, poll=10ms irq-hint=%d\n",
+-	printf("CEPHEUS TOUCH: selected %s, 1080x2400, poll=10ms irq-hint=%d\n",
 -	    goodix ? "GT9896 Yellowstone" : "Focaltech 54:52", st.irq_hint);
 -	unsigned errors = 0, ticks = 0;
 -	while (!st.dead) {
@@ -968,7 +968,7 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 -			int err = st.kind == TOUCH_GOODIX ? touch_goodix() : touch_focaltech();
 -			if (err) {
 -				if ((errors++ % 100u) == 0) {
--					printf("NABU TOUCH: report err=%d irq=%#x\n", err, st.irq_status);
+-					printf("CEPHEUS TOUCH: report err=%d irq=%#x\n", err, st.irq_status);
 -				}
 -				if (errors == 10) {
 -					touch_report(0, st.x, st.y); /* release after persistent bad reads */
@@ -1003,10 +1003,10 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
  	}
 -	st.started = true;
 +	ts.started = true;
- 	(void)PE_parse_boot_argn("nabutouch", &enabled, sizeof(enabled));
--	(void)PE_parse_boot_argn("nabutouchirq", &st.irq_hint, sizeof(st.irq_hint));
+ 	(void)PE_parse_boot_argn("cepheustouch", &enabled, sizeof(enabled));
+-	(void)PE_parse_boot_argn("cepheustouchirq", &st.irq_hint, sizeof(st.irq_hint));
  	if (!enabled) {
- 		printf("NABU TOUCH: disabled (nabutouch=0)\n");
+ 		printf("CEPHEUS TOUCH: disabled (cepheustouch=0)\n");
  		return;
  	}
 -	kern_return_t kr = kernel_thread_start(touch_thread, NULL, &thread);
@@ -1014,18 +1014,18 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
  	if (kr == KERN_SUCCESS) {
  		thread_deallocate(thread);
  	} else {
- 		printf("NABU TOUCH: kernel_thread_start failed %d\n", kr);
+ 		printf("CEPHEUS TOUCH: kernel_thread_start failed %d\n", kr);
  	}
  }
 +
- #endif /* ARM64_BOARD_CONFIG_NABU */
-diff --git a/bsd/dev/nabu_geni_spi.c b/bsd/dev/nabu_geni_spi.c
+ #endif /* ARM64_BOARD_CONFIG_CEPHEUS */
+diff --git a/bsd/dev/cepheus_geni_spi.c b/bsd/dev/cepheus_geni_spi.c
 new file mode 100644
 --- /dev/null
-+++ b/bsd/dev/nabu_geni_spi.c
++++ b/bsd/dev/cepheus_geni_spi.c
 @@ -0,0 +1,348 @@
 +// SPDX-License-Identifier: BSD-2-Clause-Patent
-+#include "nabu_geni_spi.h"
++#include "cepheus_geni_spi.h"
 +
 +static uint32_t rd(struct geni_spi *s, uint32_t reg) { return s->se.rd(s->se.ctx, reg); }
 +static void wr(struct geni_spi *s, uint32_t reg, uint32_t v) { s->se.wr(s->se.ctx, reg, v); }
@@ -1372,10 +1372,10 @@ new file mode 100644
 +    recover(s);
 +    return status;
 +}
-diff --git a/bsd/dev/nabu_geni_spi.h b/bsd/dev/nabu_geni_spi.h
+diff --git a/bsd/dev/cepheus_geni_spi.h b/bsd/dev/cepheus_geni_spi.h
 new file mode 100644
 --- /dev/null
-+++ b/bsd/dev/nabu_geni_spi.h
++++ b/bsd/dev/cepheus_geni_spi.h
 @@ -0,0 +1,223 @@
 +// SPDX-License-Identifier: BSD-2-Clause-Patent
 +// Qualcomm GENI serial-engine SPI master, FIFO (PIO) mode. Register layout and sequences follow the study of the
@@ -1600,13 +1600,13 @@ new file mode 100644
 +// One full-duplex (rx!=NULL, tx!=NULL), TX-only or RX-only transfer of len bytes (8 bits per word), polled.
 +int geni_spi_transfer(struct geni_spi *s, const uint8_t *tx, uint8_t *rx, size_t len, int keep_cs);
 +#endif
-diff --git a/bsd/dev/nabu_nt36523.c b/bsd/dev/nabu_nt36523.c
+diff --git a/bsd/dev/cepheus_nt36523.c b/bsd/dev/cepheus_nt36523.c
 new file mode 100644
 --- /dev/null
-+++ b/bsd/dev/nabu_nt36523.c
++++ b/bsd/dev/cepheus_nt36523.c
 @@ -0,0 +1,201 @@
 +// SPDX-License-Identifier: BSD-2-Clause-Patent
-+#include "nabu_nt36523.h"
++#include "cepheus_nt36523.h"
 +
 +#include <sys/systm.h>
 +
@@ -1806,22 +1806,22 @@ new file mode 100644
 +	}
 +	return 0;
 +}
-diff --git a/bsd/dev/nabu_nt36523.h b/bsd/dev/nabu_nt36523.h
+diff --git a/bsd/dev/cepheus_nt36523.h b/bsd/dev/cepheus_nt36523.h
 new file mode 100644
 --- /dev/null
-+++ b/bsd/dev/nabu_nt36523.h
++++ b/bsd/dev/cepheus_nt36523.h
 @@ -0,0 +1,78 @@
 +/*
-+ * Novatek NT36523 protocol helpers for nabu.
++ * Novatek NT36523 protocol helpers for cepheus.
 + *
-+ * Clean-room implementation from the protocol facts used by the nabu vendor
++ * Clean-room implementation from the protocol facts used by the cepheus vendor
 + * driver (nt36xxx.c / nt36xxx_mem_map.h).  No kernel dependencies; the bus is
 + * supplied by the caller so the same code can run in host tests and in XNU.
 + *
 + * SPDX-License-Identifier: BSD-2-Clause-Patent
 + */
-+#ifndef NABU_NT36523_H
-+#define NABU_NT36523_H
++#ifndef CEPHEUS_NT36523_H
++#define CEPHEUS_NT36523_H
 +
 +#include <stddef.h>
 +#include <stdint.h>
@@ -1888,19 +1888,19 @@ new file mode 100644
 +/* Match a 6-byte trim id against the NT36523 table. */
 +int nvt_match_nt36523(const uint8_t id[6]);
 +
-+#endif /* NABU_NT36523_H */
++#endif /* CEPHEUS_NT36523_H */
 diff --git a/bsd/conf/files b/bsd/conf/files
 --- a/bsd/conf/files
 +++ b/bsd/conf/files
 @@ -108,6 +108,8 @@
- bsd/dev/nabu_sample.c			standard
- bsd/dev/nabu_keys.c			standard
- bsd/dev/nabu_touch.c			standard
-+bsd/dev/nabu_geni_spi.c			standard
-+bsd/dev/nabu_nt36523.c			standard
- bsd/dev/nabu_rpmh.c			standard
- bsd/dev/nabu_spmi.c			standard
- bsd/dev/nabu_usb.c			standard
+ bsd/dev/cepheus_sample.c			standard
+ bsd/dev/cepheus_keys.c			standard
+ bsd/dev/cepheus_touch.c			standard
++bsd/dev/cepheus_geni_spi.c			standard
++bsd/dev/cepheus_nt36523.c			standard
+ bsd/dev/cepheus_rpmh.c			standard
+ bsd/dev/cepheus_spmi.c			standard
+ bsd/dev/cepheus_usb.c			standard
 diff --git a/iokit/Kernel/arm/NabuFramebuffer.cpp b/iokit/Kernel/arm/NabuFramebuffer.cpp
 --- a/iokit/Kernel/arm/NabuFramebuffer.cpp
 +++ b/iokit/Kernel/arm/NabuFramebuffer.cpp
@@ -1908,14 +1908,14 @@ diff --git a/iokit/Kernel/arm/NabuFramebuffer.cpp b/iokit/Kernel/arm/NabuFramebu
  	bool          fDirty;
  	uint32_t      fFlushTicks;    /* vsync ticks between panel copies */
  	bool          fPowerOff;      /* RequestPowerChange(0) */
-+	bool          fForceOn;       /* nabufb_force_on: ignore power-off */
-+	bool          fDumpSwap;      /* nabufb_dump_swap: dump SwapEnd records */
-+	bool          fProbeSurfaces; /* nabufb_probe_surfaces: repeat surface scan */
++	bool          fForceOn;       /* cepheusfb_force_on: ignore power-off */
++	bool          fDumpSwap;      /* cepheusfb_dump_swap: dump SwapEnd records */
++	bool          fProbeSurfaces; /* cepheusfb_probe_surfaces: repeat surface scan */
 +	uint32_t      fProbeTicks;
 +	uint32_t      fProbeCount;
-+	bool          fFallback;      /* nabufb_fallback: present a probed BGRA surface */
-+	bool          fStretch;       /* nabufb_stretch: fill the panel, no letterbox */
-+	bool          fCrop;          /* nabufb_crop: fill the panel, crop the sides */
++	bool          fFallback;      /* cepheusfb_fallback: present a probed BGRA surface */
++	bool          fStretch;       /* cepheusfb_stretch: fill the panel, no letterbox */
++	bool          fCrop;          /* cepheusfb_crop: fill the panel, crop the sides */
 +	bool          fFallbackLogged;
 +	uint32_t      fFallbackTicks;
  	uint32_t      fFadeStep;      /* fade-out steps done while off */
@@ -1931,50 +1931,50 @@ diff --git a/iokit/Kernel/arm/NabuFramebuffer.cpp b/iokit/Kernel/arm/NabuFramebu
  OSDefineMetaClassAndStructors(AppleCLCD, IOMobileFramebuffer);
 @@ -195,6 +206,39 @@
  	uint32_t hz = 10;
- 	PE_parse_boot_argn("nabufb_hz", &hz, sizeof(hz));
+ 	PE_parse_boot_argn("cepheusfb_hz", &hz, sizeof(hz));
  	fFlushTicks = (hz == 0 || hz >= 60) ? 1 : 60 / hz;
 +	int force_on = 0;
-+	PE_parse_boot_argn("nabufb_force_on", &force_on, sizeof(force_on));
++	PE_parse_boot_argn("cepheusfb_force_on", &force_on, sizeof(force_on));
 +	fForceOn = force_on != 0;
 +	int dump_swap = 0;
-+	PE_parse_boot_argn("nabufb_dump_swap", &dump_swap, sizeof(dump_swap));
++	PE_parse_boot_argn("cepheusfb_dump_swap", &dump_swap, sizeof(dump_swap));
 +	fDumpSwap = dump_swap != 0;
 +	int probe_surfaces = 0;
-+	PE_parse_boot_argn("nabufb_probe_surfaces", &probe_surfaces, sizeof(probe_surfaces));
++	PE_parse_boot_argn("cepheusfb_probe_surfaces", &probe_surfaces, sizeof(probe_surfaces));
 +	fProbeSurfaces = probe_surfaces != 0;
 +	fProbeTicks = 0;
 +	fProbeCount = 0;
 +	int fallback = 0;
-+	PE_parse_boot_argn("nabufb_fallback", &fallback, sizeof(fallback));
++	PE_parse_boot_argn("cepheusfb_fallback", &fallback, sizeof(fallback));
 +	fFallback = fallback != 0;
 +	int stretch = 0;
-+	PE_parse_boot_argn("nabufb_stretch", &stretch, sizeof(stretch));
++	PE_parse_boot_argn("cepheusfb_stretch", &stretch, sizeof(stretch));
 +	fStretch = stretch != 0;
 +	int crop = 0;
-+	PE_parse_boot_argn("nabufb_crop", &crop, sizeof(crop));
++	PE_parse_boot_argn("cepheusfb_crop", &crop, sizeof(crop));
 +	fCrop = crop != 0;
 +	fFallbackLogged = false;
 +	fFallbackTicks = 0;
 +	int console_off = 0;
-+	PE_parse_boot_argn("nabufb_console_off", &console_off, sizeof(console_off));
++	PE_parse_boot_argn("cepheusfb_console_off", &console_off, sizeof(console_off));
 +	int console_quiet = 0;
-+	PE_parse_boot_argn("nabufb_noconsole", &console_quiet, sizeof(console_quiet));
++	PE_parse_boot_argn("cepheusfb_noconsole", &console_quiet, sizeof(console_quiet));
 +	if (console_off || console_quiet) {
 +		/* Mute before the console can paint over the shim's boot logo.
 +		 * The persistent ring logger and panic path remain active. */
-+		nabu_console_muted = 1;
-+		IOLog("NABU FB: console muted from start (off=%d quiet=%d)\n",
++		cepheus_console_muted = 1;
++		IOLog("CEPHEUS FB: console muted from start (off=%d quiet=%d)\n",
 +		    console_off, console_quiet);
 +	}
- 	fVsync->setTimeoutUS(NABU_FB_VSYNC_US);
+ 	fVsync->setTimeoutUS(CEPHEUS_FB_VSYNC_US);
  
  	setProperty(kIOUserClientClassKey, "IOMobileFramebufferUserClient");
 @@ -203,6 +247,9 @@
  	registerService();
- 	IOLog("NABU FB: AppleCLCD %ux%u stride %u at 0x%llx, default surface %u, presented as %ux%u\n",
+ 	IOLog("CEPHEUS FB: AppleCLCD %ux%u stride %u at 0x%llx, default surface %u, presented as %ux%u\n",
  	    fWidth, fHeight, fRowBytes, fPhys, fSurface->id, fLogicalW, fLogicalH);
 +	if (fForceOn) {
-+		IOLog("NABU FB: nabufb_force_on=1, RequestPowerChange(0) will be ignored\n");
++		IOLog("CEPHEUS FB: cepheusfb_force_on=1, RequestPowerChange(0) will be ignored\n");
 +	}
  	return true;
  }
@@ -1988,10 +1988,10 @@ diff --git a/iokit/Kernel/arm/NabuFramebuffer.cpp b/iokit/Kernel/arm/NabuFramebu
 +		fb->fProbeTicks = 0;
 +		if (fb->fProbeCount < 4) {
 +			fb->fProbeCount++;
-+			nabu_surface_probe_all();
++			cepheus_surface_probe_all();
 +		}
 +	}
-+	if (fb->fFallback && nabu_surface_bgra_hint_id() != 0) {
++	if (fb->fFallback && cepheus_surface_bgra_hint_id() != 0) {
 +		if ((++fb->fFallbackTicks % 6) == 0) {
 +			IOLockLock(fb->fLock);
 +			fb->fDirty = true;
@@ -2003,34 +2003,34 @@ diff --git a/iokit/Kernel/arm/NabuFramebuffer.cpp b/iokit/Kernel/arm/NabuFramebu
  		(uint32_t)count, (uint32_t)(count >> 32),
  		(uint32_t)now, (uint32_t)(now >> 32),
 @@ -303,8 +366,38 @@
- 	memcpy(fPending, rec, NABU_FB_SWAP_REC_SIZE);
+ 	memcpy(fPending, rec, CEPHEUS_FB_SWAP_REC_SIZE);
  	fDirty = true;
  	IOLockUnlock(fLock);
--	if ((++nabu_fb_swap_count % 1000) == 0) {
--		IOLog("NABU FB: %llu swaps\n", nabu_fb_swap_count);
+-	if ((++cepheus_fb_swap_count % 1000) == 0) {
+-		IOLog("CEPHEUS FB: %llu swaps\n", cepheus_fb_swap_count);
 +
-+	uint64_t n = ++nabu_fb_swap_count;
++	uint64_t n = ++cepheus_fb_swap_count;
 +	if (fDumpSwap && n <= 2) {
-+		IOLog("NABU FB: SwapEnd dump %llu (%u bytes, nonzero words)\n",
-+		    n, NABU_FB_SWAP_REC_SIZE);
-+		for (uint32_t off = 0; off + 4 <= NABU_FB_SWAP_REC_SIZE; off += 4) {
++		IOLog("CEPHEUS FB: SwapEnd dump %llu (%u bytes, nonzero words)\n",
++		    n, CEPHEUS_FB_SWAP_REC_SIZE);
++		for (uint32_t off = 0; off + 4 <= CEPHEUS_FB_SWAP_REC_SIZE; off += 4) {
 +			uint32_t v = get32(rec, off);
 +			if (v != 0) {
-+				IOLog("NABU FB:  [%03x] 0x%08x\n", off, v);
++				IOLog("CEPHEUS FB:  [%03x] 0x%08x\n", off, v);
 +			}
 +		}
 +	}
 +	if (n <= 16) {
 +		uint32_t mask = get32(rec, 0x104);
-+		IOLog("NABU FB: SwapEnd %llu swap %u mask 0x%x\n", n,
++		IOLog("CEPHEUS FB: SwapEnd %llu swap %u mask 0x%x\n", n,
 +		    get32(rec, 0x50), mask);
-+		for (uint32_t layer = 0; layer < NABU_FB_LAYERS; layer++) {
++		for (uint32_t layer = 0; layer < CEPHEUS_FB_LAYERS; layer++) {
 +			if (!(mask & (1u << layer))) {
 +				continue;
 +			}
 +			const uint8_t *a = rec + 0x64 + 16 * layer;
 +			const uint8_t *b = rec + 0xc4 + 16 * layer;
-+			IOLog("NABU FB:  layer %u surface %u a %d,%d %ux%u b %d,%d %dx%d\n",
++			IOLog("CEPHEUS FB:  layer %u surface %u a %d,%d %ux%u b %d,%d %dx%d\n",
 +			    layer, get32(rec, 0x54 + 4 * layer),
 +			    (int32_t)get32(a, 0), (int32_t)get32(a, 4),
 +			    get32(a, 8), get32(a, 12),
@@ -2039,7 +2039,7 @@ diff --git a/iokit/Kernel/arm/NabuFramebuffer.cpp b/iokit/Kernel/arm/NabuFramebu
 +		}
 +	}
 +	if ((n % 1000) == 0) {
-+		IOLog("NABU FB: %llu swaps\n", n);
++		IOLog("CEPHEUS FB: %llu swaps\n", n);
  	}
  }
  
@@ -2049,7 +2049,7 @@ diff --git a/iokit/Kernel/arm/NabuFramebuffer.cpp b/iokit/Kernel/arm/NabuFramebu
  
 +	if (fFallback) {
 +		bool any_layer = false;
-+		for (uint32_t layer = 0; layer < NABU_FB_LAYERS; layer++) {
++		for (uint32_t layer = 0; layer < CEPHEUS_FB_LAYERS; layer++) {
 +			if ((mask & (1u << layer)) &&
 +			    get32(rec, 0x54 + 4 * layer) != 0) {
 +				any_layer = true;
@@ -2062,7 +2062,7 @@ diff --git a/iokit/Kernel/arm/NabuFramebuffer.cpp b/iokit/Kernel/arm/NabuFramebu
 +		}
 +	}
 +
- 	for (uint32_t layer = 0; layer < NABU_FB_LAYERS; layer++) {
+ 	for (uint32_t layer = 0; layer < CEPHEUS_FB_LAYERS; layer++) {
  		uint32_t id = get32(rec, 0x54 + 4 * layer);
  		const uint8_t *a = rec + 0x64 + 16 * layer;
 @@ -399,6 +507,96 @@
@@ -2079,11 +2079,11 @@ diff --git a/iokit/Kernel/arm/NabuFramebuffer.cpp b/iokit/Kernel/arm/NabuFramebu
 +void
 +AppleCLCD::present_fallback(void)
 +{
-+	uint32_t id = nabu_surface_bgra_hint_id();
++	uint32_t id = cepheus_surface_bgra_hint_id();
 +	if (id == 0) {
 +		return;
 +	}
-+	NabuSurface *s = nabu_surface_copy(id);
++	NabuSurface *s = cepheus_surface_copy(id);
 +	if (s == NULL) {
 +		return;
 +	}
@@ -2155,7 +2155,7 @@ diff --git a/iokit/Kernel/arm/NabuFramebuffer.cpp b/iokit/Kernel/arm/NabuFramebu
 +
 +	if (!fFallbackLogged) {
 +		fFallbackLogged = true;
-+		IOLog("NABU FB: fallback surface %u %ux%u -> %ux%u y=%u\n",
++		IOLog("CEPHEUS FB: fallback surface %u %ux%u -> %ux%u y=%u\n",
 +		    id, sw, sh, dw, dh, off);
 +	}
 +	s->release();
@@ -2167,7 +2167,7 @@ diff --git a/iokit/Kernel/arm/NabuFramebuffer.cpp b/iokit/Kernel/arm/NabuFramebu
  		if (args->scalarInputCount >= 1) {
  			bool off = args->scalarInput[0] == 0;
 +			if (off && fFB->fForceOn) {
-+				IOLog("NABU FB: display off ignored (nabufb_force_on)\n");
++				IOLog("CEPHEUS FB: display off ignored (cepheusfb_force_on)\n");
 +				break;
 +			}
  			IOLockLock(fFB->fLock);

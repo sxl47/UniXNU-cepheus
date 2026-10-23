@@ -2,12 +2,12 @@ diff --git a/libkern/conf/files b/libkern/conf/files
 --- a/libkern/conf/files
 +++ b/libkern/conf/files
 @@ -103,6 +103,9 @@
- libkern/crypto/nabu_aes_ct_dec.c	optional crypto
- libkern/crypto/nabu_aes_ct_cbcenc.c	optional crypto
- libkern/crypto/nabu_aes_ct_cbcdec.c	optional crypto
-+libkern/crypto/nabu_md5.c	optional crypto
-+libkern/crypto/nabu_dec32le.c	optional crypto
-+libkern/crypto/nabu_enc32le.c	optional crypto
+ libkern/crypto/cepheus_aes_ct_dec.c	optional crypto
+ libkern/crypto/cepheus_aes_ct_cbcenc.c	optional crypto
+ libkern/crypto/cepheus_aes_ct_cbcdec.c	optional crypto
++libkern/crypto/cepheus_md5.c	optional crypto
++libkern/crypto/cepheus_dec32le.c	optional crypto
++libkern/crypto/cepheus_enc32le.c	optional crypto
  libkern/crypto/corecrypto_aesxts.c		optional crypto
  libkern/crypto/corecrypto_rand.c		optional crypto
  libkern/crypto/corecrypto_rsa.c		    optional crypto
@@ -15,17 +15,17 @@ diff --git a/libkern/conf/Makefile.template b/libkern/conf/Makefile.template
 --- a/libkern/conf/Makefile.template
 +++ b/libkern/conf/Makefile.template
 @@ -35,6 +35,15 @@
- nabu_aes_ct_cbcenc.o_CFLAGS_ADD += -mgeneral-regs-only
- nabu_aes_ct_cbcdec.o_CFLAGS_ADD += -mgeneral-regs-only
+ cepheus_aes_ct_cbcenc.o_CFLAGS_ADD += -mgeneral-regs-only
+ cepheus_aes_ct_cbcdec.o_CFLAGS_ADD += -mgeneral-regs-only
  corecrypto_aes.o_CFLAGS_ADD += -mgeneral-regs-only
 +# BearSSL MD5 behind the legacy MD5Init/Update/Final API (corecrypto_md5.c).
-+nabu_md5.o_INCFLAGS = $(NABU_AES_INC)
-+nabu_dec32le.o_INCFLAGS = $(NABU_AES_INC)
-+nabu_enc32le.o_INCFLAGS = $(NABU_AES_INC)
-+corecrypto_md5.o_INCFLAGS = $(NABU_AES_INC)
-+nabu_md5.o_CFLAGS_ADD += -mgeneral-regs-only
-+nabu_dec32le.o_CFLAGS_ADD += -mgeneral-regs-only
-+nabu_enc32le.o_CFLAGS_ADD += -mgeneral-regs-only
++cepheus_md5.o_INCFLAGS = $(CEPHEUS_AES_INC)
++cepheus_dec32le.o_INCFLAGS = $(CEPHEUS_AES_INC)
++cepheus_enc32le.o_INCFLAGS = $(CEPHEUS_AES_INC)
++corecrypto_md5.o_INCFLAGS = $(CEPHEUS_AES_INC)
++cepheus_md5.o_CFLAGS_ADD += -mgeneral-regs-only
++cepheus_dec32le.o_CFLAGS_ADD += -mgeneral-regs-only
++cepheus_enc32le.o_CFLAGS_ADD += -mgeneral-regs-only
 +corecrypto_md5.o_CFLAGS_ADD += -mgeneral-regs-only
  endif
  
@@ -37,14 +37,14 @@ diff --git a/libkern/crypto/corecrypto_md5.c b/libkern/crypto/corecrypto_md5.c
  }
  
  /* Copy a ccdigest ctx into a legacy MD5 context */
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +/*
-+ * NABU has no corecrypto kext (g_crypto_funcs stays NULL). MD5 uses
-+ * BearSSL's portable implementation (libkern/crypto/nabu_md5.c), with
++ * CEPHEUS has no corecrypto kext (g_crypto_funcs stays NULL). MD5 uses
++ * BearSSL's portable implementation (libkern/crypto/cepheus_md5.c), with
 + * MD5_CTX carrying exactly its state: chaining value, byte count and the
 + * partial block, converted around each call like the corecrypto path does.
 + */
-+#include "nabu_bearssl/inc/bearssl_hash.h"
++#include "cepheus_bearssl/inc/bearssl_hash.h"
 +
 +static void
 +MD5ToBr(MD5_CTX *md5_ctx, br_md5_context *br_ctx)
@@ -91,7 +91,7 @@ diff --git a/libkern/crypto/corecrypto_md5.c b/libkern/crypto/corecrypto_md5.c
 +	br_md5_out(&br_ctx, digest);
 +}
 +
-+#else /* !ARM64_BOARD_CONFIG_NABU */
++#else /* !ARM64_BOARD_CONFIG_CEPHEUS */
 +
  static void
  DiToMD5(const struct ccdigest_info *di, struct ccdigest_ctx *di_ctx, MD5_CTX *md5_ctx)
@@ -101,31 +101,31 @@ diff --git a/libkern/crypto/corecrypto_md5.c b/libkern/crypto/corecrypto_md5.c
  	ccdigest_final(di, di_ctx, digest);
  }
 +
-+#endif /* !ARM64_BOARD_CONFIG_NABU */
-diff --git a/libkern/crypto/nabu_md5.c b/libkern/crypto/nabu_md5.c
++#endif /* !ARM64_BOARD_CONFIG_CEPHEUS */
+diff --git a/libkern/crypto/cepheus_md5.c b/libkern/crypto/cepheus_md5.c
 new file mode 100644
 --- /dev/null
-+++ b/libkern/crypto/nabu_md5.c
++++ b/libkern/crypto/cepheus_md5.c
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
-+#if defined(ARM64_BOARD_CONFIG_NABU)
-+#include "nabu_bearssl/src/hash/md5.c"
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#include "cepheus_bearssl/src/hash/md5.c"
 +#endif
-diff --git a/libkern/crypto/nabu_dec32le.c b/libkern/crypto/nabu_dec32le.c
+diff --git a/libkern/crypto/cepheus_dec32le.c b/libkern/crypto/cepheus_dec32le.c
 new file mode 100644
 --- /dev/null
-+++ b/libkern/crypto/nabu_dec32le.c
++++ b/libkern/crypto/cepheus_dec32le.c
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
-+#if defined(ARM64_BOARD_CONFIG_NABU)
-+#include "nabu_bearssl/src/codec/dec32le.c"
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#include "cepheus_bearssl/src/codec/dec32le.c"
 +#endif
-diff --git a/libkern/crypto/nabu_enc32le.c b/libkern/crypto/nabu_enc32le.c
+diff --git a/libkern/crypto/cepheus_enc32le.c b/libkern/crypto/cepheus_enc32le.c
 new file mode 100644
 --- /dev/null
-+++ b/libkern/crypto/nabu_enc32le.c
++++ b/libkern/crypto/cepheus_enc32le.c
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
-+#if defined(ARM64_BOARD_CONFIG_NABU)
-+#include "nabu_bearssl/src/codec/enc32le.c"
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#include "cepheus_bearssl/src/codec/enc32le.c"
 +#endif

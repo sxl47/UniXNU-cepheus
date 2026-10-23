@@ -1,8 +1,8 @@
 --- a/bsd/kern/kern_exit.c
 +++ b/bsd/kern/kern_exit.c
 @@ -1889,6 +1889,13 @@
- 			extern void nabu_crash_log(const char *, int, int, uint64_t, uint64_t);
- 			nabu_crash_log(p->p_comm, proc_getpid(p), WTERMSIG(rv),
+ 			extern void cepheus_crash_log(const char *, int, int, uint64_t, uint64_t);
+ 			cepheus_crash_log(p->p_comm, proc_getpid(p), WTERMSIG(rv),
  			    ((uint64_t)ut->uu_exception << 32) | (uint32_t)ut->uu_code, ut->uu_subcode);
 +			/* abort_with_payload messages (_objc_fatal, os_crash_fmt, ...) */
 +			if (PROC_HAS_EXITREASON(p)) {

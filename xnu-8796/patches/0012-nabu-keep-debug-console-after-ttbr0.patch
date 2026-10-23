@@ -5,18 +5,18 @@ diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
  #define ARM64_PHYSMAP_ALIGNMENT_PADDING (PTOV_TABLE_SIZE * ARM_TT_TWIG_SIZE)
  #endif
  
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +/*
 + * The reserved low-globals/kernel region is excluded from VM allocation.
 + * Use the otherwise empty 32MB block above low globals and below gVirtBase
 + * for a Normal-NC framebuffer alias that survives bootstrap TTBR0 teardown.
 + */
-+#define NABU_EARLY_FB_VA (VM_MIN_KERNEL_ADDRESS + ARM_TT_L2_SIZE)
++#define CEPHEUS_EARLY_FB_VA (VM_MIN_KERNEL_ADDRESS + ARM_TT_L2_SIZE)
 +
 +static void
-+nabu_early_map_final(void)
++cepheus_early_map_final(void)
 +{
-+	const vm_map_address_t va = NABU_EARLY_FB_VA;
++	const vm_map_address_t va = CEPHEUS_EARLY_FB_VA;
 +	assert(va + ARM_TT_L2_SIZE <= gVirtBase);
 +	tt_entry_t l1 = cpu_tte[(va & ARM_TT_L1_INDEX_MASK) >> ARM_TT_L1_SHIFT];
 +	assert((l1 & (ARM_TTE_VALID | ARM_TTE_TYPE_MASK)) == (ARM_TTE_VALID | ARM_TTE_TYPE_TABLE));
@@ -38,9 +38,9 @@ diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
  
  	arm_set_user_tbi();
  
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +	/* phystokv() must still refer to the bootstrap aperture here. */
-+	nabu_early_map_final();
++	cepheus_early_map_final();
 +#endif
  	arm_vm_physmap_init(args);
  	set_mmu_ttb_alternate(cpu_ttep & TTBR_BADDR_MASK);
@@ -48,20 +48,20 @@ diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
  	ml_enable_monitor();
  
 -	/* The framebuffer VA=PA mapping belongs to the outgoing TTBR0. */
--	nabu_early_disable();
-+#if defined(NABU)
+-	cepheus_early_disable();
++#if defined(CEPHEUS)
 +	/* The final TTBR1 is live; leave the outgoing VA=PA framebuffer alias. */
-+	nabu_early_relocate(NABU_EARLY_FB_VA);
++	cepheus_early_relocate(CEPHEUS_EARLY_FB_VA);
 +#endif
  	set_mmu_ttb(invalid_ttep & TTBR_BADDR_MASK);
  
  	flush_mmu_tlb();
-+	nabu_early_mark(10, "TTBR0 off; TLB flushed");
++	cepheus_early_mark(10, "TTBR0 off; TLB flushed");
  	kva_active = TRUE;
  	// global table pointers may need to be different due to physical aperture remapping
  	cpu_tte = (tt_entry_t*)(phystokv(cpu_ttep));
  	invalid_tte = (tt_entry_t*)(phystokv(invalid_ttep));
-+	nabu_early_mark(11, "physmap table pointers rebound");
++	cepheus_early_mark(11, "physmap table pointers rebound");
  
  	// From here on out, we're off the bootstrap translation tables.
  
@@ -69,9 +69,9 @@ diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
      }
  #endif
  #endif
-+	nabu_early_mark(12, "calling pmap_bootstrap");
++	cepheus_early_mark(12, "calling pmap_bootstrap");
  	pmap_bootstrap(dynamic_memory_begin);
-+	nabu_early_mark(13, "pmap_bootstrap done");
++	cepheus_early_mark(13, "pmap_bootstrap done");
  
  	disable_preemption();
  
@@ -79,13 +79,13 @@ diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
  		va_l1 = va_l2_end;
  		cpu_l1_tte++;
  	}
-+	nabu_early_mark(14, "early I/O page tables ready");
++	cepheus_early_mark(14, "early I/O page tables ready");
  
  #if defined(KERNEL_INTEGRITY_KTRR) || defined(KERNEL_INTEGRITY_CTRR)
  	/*
-diff --git a/osfmk/arm64/nabu_early.c b/osfmk/arm64/nabu_early.c
---- a/osfmk/arm64/nabu_early.c
-+++ b/osfmk/arm64/nabu_early.c
+diff --git a/osfmk/arm64/cepheus_early.c b/osfmk/arm64/cepheus_early.c
+--- a/osfmk/arm64/cepheus_early.c
++++ b/osfmk/arm64/cepheus_early.c
 @@ -2,7 +2,8 @@
   * Redmi Note 10 Pro bootstrap console. No allocation, locks, ADT parsing or
   * per-CPU state: panic() can reach this before a current thread exists.
@@ -94,7 +94,7 @@ diff --git a/osfmk/arm64/nabu_early.c b/osfmk/arm64/nabu_early.c
 + * arm_vm_init installs a reserved kernel VA alias before removing TTBR0;
 + * retain this console until the normal framebuffer serial console is ready.
   */
- #include <arm64/nabu_early.h>
+ #include <arm64/cepheus_early.h>
  
 @@ -10,7 +11,8 @@
  #include <stdint.h>
@@ -108,7 +108,7 @@ diff --git a/osfmk/arm64/nabu_early.c b/osfmk/arm64/nabu_early.c
  #define EARLY_STRIDE (4320u / 4)
 @@ -87,18 +89,21 @@
  void
- nabu_early_mark(unsigned int stage, const char *label)
+ cepheus_early_mark(unsigned int stage, const char *label)
  {
 -	if (early_disabled || stage > 8) {
 +	if (early_disabled || stage > 20) {
@@ -123,55 +123,55 @@ diff --git a/osfmk/arm64/nabu_early.c b/osfmk/arm64/nabu_early.c
  		}
  	}
  	__asm__ volatile("dsb sy" ::: "memory");
- 	nabu_early_string("NABU EARLY ");
--	nabu_early_putc((char)('0' + stage));
+ 	cepheus_early_string("CEPHEUS EARLY ");
+-	cepheus_early_putc((char)('0' + stage));
 +	if (stage >= 10) {
-+		nabu_early_putc((char)('0' + stage / 10));
++		cepheus_early_putc((char)('0' + stage / 10));
 +	}
-+	nabu_early_putc((char)('0' + stage % 10));
- 	nabu_early_string(": ");
- 	nabu_early_string(label);
- 	nabu_early_putc('\n');
++	cepheus_early_putc((char)('0' + stage % 10));
+ 	cepheus_early_string(": ");
+ 	cepheus_early_string(label);
+ 	cepheus_early_putc('\n');
 @@ -121,9 +126,17 @@
  }
  
  void
-+nabu_early_relocate(uint64_t base)
++cepheus_early_relocate(uint64_t base)
 +{
-+	nabu_early_mark(8, "leaving bootstrap TTBR0");
++	cepheus_early_mark(8, "leaving bootstrap TTBR0");
 +	early_fb = (volatile uint32_t *)(uintptr_t)base;
 +	__asm__ volatile("dsb sy" ::: "memory");
-+	nabu_early_mark(9, "kernel framebuffer VA live");
++	cepheus_early_mark(9, "kernel framebuffer VA live");
 +}
 +
 +void
- nabu_early_disable(void)
+ cepheus_early_disable(void)
  {
--	nabu_early_mark(8, "leaving bootstrap TTBR0");
+-	cepheus_early_mark(8, "leaving bootstrap TTBR0");
  	early_disabled = 1;
  	__asm__ volatile("dsb sy" ::: "memory");
  }
-diff --git a/osfmk/arm64/nabu_early.h b/osfmk/arm64/nabu_early.h
---- a/osfmk/arm64/nabu_early.h
-+++ b/osfmk/arm64/nabu_early.h
+diff --git a/osfmk/arm64/cepheus_early.h b/osfmk/arm64/cepheus_early.h
+--- a/osfmk/arm64/cepheus_early.h
++++ b/osfmk/arm64/cepheus_early.h
 @@ -1,14 +1,16 @@
 -/* Early screen diagnostics, valid only while the bootstrap TTBR0 is live. */
 +/* Screen diagnostics through bootstrap TTBR0 and the final kernel TTBR1. */
- #ifndef _ARM64_NABU_EARLY_H_
- #define _ARM64_NABU_EARLY_H_
+ #ifndef _ARM64_CEPHEUS_EARLY_H_
+ #define _ARM64_CEPHEUS_EARLY_H_
  
  #include <pexpert/arm64/board_config.h>
  #include <stdarg.h>
 +#include <stdint.h>
  
- #if defined(NABU)
- void nabu_early_mark(unsigned int stage, const char *label);
- void nabu_early_putc(char c);
- void nabu_early_panic(const char *fmt, va_list *args);
-+void nabu_early_relocate(uint64_t base);
- void nabu_early_disable(void);
+ #if defined(CEPHEUS)
+ void cepheus_early_mark(unsigned int stage, const char *label);
+ void cepheus_early_putc(char c);
+ void cepheus_early_panic(const char *fmt, va_list *args);
++void cepheus_early_relocate(uint64_t base);
+ void cepheus_early_disable(void);
  #else
- static inline void nabu_early_mark(unsigned int stage, const char *label)
+ static inline void cepheus_early_mark(unsigned int stage, const char *label)
 diff --git a/osfmk/arm64/Makefile b/osfmk/arm64/Makefile
 --- a/osfmk/arm64/Makefile
 +++ b/osfmk/arm64/Makefile
@@ -179,7 +179,7 @@ diff --git a/osfmk/arm64/Makefile b/osfmk/arm64/Makefile
  	monotonic.h \
  	perfmon_arm64_regs.h \
  	proc_reg.h \
-+	nabu_early.h \
++	cepheus_early.h \
  	asm.h \
  	tlb.h \
  	pal_hibernate.h
@@ -188,9 +188,9 @@ diff --git a/osfmk/arm/arm_init.c b/osfmk/arm/arm_init.c
 +++ b/osfmk/arm/arm_init.c
 @@ -523,6 +523,7 @@
  
- 	nabu_early_mark(7, "entering arm_vm_init");
+ 	cepheus_early_mark(7, "entering arm_vm_init");
  	arm_vm_init(xmaxmem, args);
-+	nabu_early_mark(15, "arm_vm_init returned");
++	cepheus_early_mark(15, "arm_vm_init returned");
  
  	if (debug_boot_arg) {
  		patch_low_glo();
@@ -198,14 +198,14 @@ diff --git a/osfmk/arm/arm_init.c b/osfmk/arm/arm_init.c
  	PE_consistent_debug_inherit();
  
  	/* Setup debugging output. */
-+	nabu_early_mark(16, "calling serial_init");
++	cepheus_early_mark(16, "calling serial_init");
  	const unsigned int serial_exists = serial_init();
-+	nabu_early_mark(19, "serial_init returned");
++	cepheus_early_mark(19, "serial_init returned");
  	kernel_startup_initialize_upto(STARTUP_SUB_KPRINTF);
  	kprintf("kprintf initialized\n");
-+	nabu_early_mark(20, "kprintf startup complete");
++	cepheus_early_mark(20, "kprintf startup complete");
 +	if (serial_exists) {
-+		nabu_early_disable();
++		cepheus_early_disable();
 +	}
  
  	serialmode = 0;
@@ -217,7 +217,7 @@ diff --git a/pexpert/arm/pe_serial.c b/pexpert/arm/pe_serial.c
  #include <pexpert/arm/consistent_debug.h>
  #include <pexpert/arm64/board_config.h>
  #include <arm64/proc_reg.h>
-+#include <arm64/nabu_early.h>
++#include <arm64/cepheus_early.h>
  #include <pexpert/arm/protos.h>
  #include <kern/sched_prim.h>
  #if HIBERNATION
@@ -225,9 +225,9 @@ diff --git a/pexpert/arm/pe_serial.c b/pexpert/arm/pe_serial.c
  	if (!fbcon_width || !fbcon_height || fbcon_stride < fbcon_width * 4) {
  		return;
  	}
-+	nabu_early_mark(17, "fbcon config read; mapping");
++	cepheus_early_mark(17, "fbcon config read; mapping");
  	fbcon_base = (volatile uint32_t *)ml_io_map_wcomb(reg[0], reg[1]);
-+	nabu_early_mark(18, "fbcon mapping returned");
++	cepheus_early_mark(18, "fbcon mapping returned");
  	if (fbcon_base != NULL) {
- 		register_serial_functions(&nabu_fbcon_serial_functions);
+ 		register_serial_functions(&cepheus_fbcon_serial_functions);
  	}

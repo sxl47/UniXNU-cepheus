@@ -6,36 +6,36 @@
  
 -static kern_return_t
 +static 
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +/*
-+ * NABU IOKit trace: registry and matching calls made by the processes
-+ * named in boot-arg nabuiolog (comma separated, default "backboardd";
++ * CEPHEUS IOKit trace: registry and matching calls made by the processes
++ * named in boot-arg cepheusiolog (comma separated, default "backboardd";
 + * "-" turns it off) are printed as "IOK name: ...", at most 400 lines per
 + * boot, to find out what a daemon looks for before it gives up.
 + */
-+static char nabu_iolog_names[128];
-+static int nabu_iolog_parsed;
-+static uint32_t nabu_iolog_lines;
++static char cepheus_iolog_names[128];
++static int cepheus_iolog_parsed;
++static uint32_t cepheus_iolog_lines;
 +
 +static bool
-+nabu_iolog(char *name, size_t len)
++cepheus_iolog(char *name, size_t len)
 +{
-+	if (!nabu_iolog_parsed) {
-+		if (!PE_parse_boot_argn("nabuiolog", nabu_iolog_names, sizeof(nabu_iolog_names))) {
-+			strlcpy(nabu_iolog_names, "backboardd", sizeof(nabu_iolog_names));
++	if (!cepheus_iolog_parsed) {
++		if (!PE_parse_boot_argn("cepheusiolog", cepheus_iolog_names, sizeof(cepheus_iolog_names))) {
++			strlcpy(cepheus_iolog_names, "backboardd", sizeof(cepheus_iolog_names));
 +		}
-+		nabu_iolog_parsed = 1;
++		cepheus_iolog_parsed = 1;
 +	}
-+	if (nabu_iolog_lines >= 400) {
++	if (cepheus_iolog_lines >= 400) {
 +		return false;
 +	}
 +	proc_selfname(name, (int)len);
 +	size_t n = strlen(name);
-+	for (const char *t = nabu_iolog_names; *t;) {
++	for (const char *t = cepheus_iolog_names; *t;) {
 +		const char *end = strchr(t, ',');
 +		size_t tl = end ? (size_t)(end - t) : strlen(t);
 +		if (tl == n && n > 0 && strncmp(t, name, n) == 0) {
-+			nabu_iolog_lines++;
++			cepheus_iolog_lines++;
 +			return true;
 +		}
 +		if (!end) {
@@ -48,7 +48,7 @@
 +
 +/* Compact XML of a matching dictionary, at most 240 characters. */
 +static void
-+nabu_iolog_dict(const char *name, const char *what, OSObject *dict, const char *result)
++cepheus_iolog_dict(const char *name, const char *what, OSObject *dict, const char *result)
 +{
 +	OSSerialize *ser = OSSerialize::withCapacity(256);
 +	const char *text = "?";
@@ -70,9 +70,9 @@
  		IOTaskRegistryCompatibilityMatching(current_task(), dict);
 -		*existing = IOUserIterator::withIterator(IOService::getMatchingServices( dict ));
 +		OSIterator *found = IOService::getMatchingServices( dict );
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +		char sname[32];
-+		if (nabu_iolog(sname, sizeof(sname))) {
++		if (cepheus_iolog(sname, sizeof(sname))) {
 +			unsigned int count = 0;
 +			if (found != NULL) {
 +				while (found->getNextObject() != NULL) {
@@ -82,7 +82,7 @@
 +			}
 +			char res[16];
 +			snprintf(res, sizeof(res), "%u found", count);
-+			nabu_iolog_dict(sname, "matching", dict, res);
++			cepheus_iolog_dict(sname, "matching", dict, res);
 +		}
 +#endif
 +		*existing = IOUserIterator::withIterator(found);
@@ -93,10 +93,10 @@
  		IOTaskRegistryCompatibilityMatching(current_task(), dict);
  		*service = IOService::copyMatchingService( dict );
  		kr = *service ? kIOReturnSuccess : kIOReturnNotFound;
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +		char sname[32];
-+		if (nabu_iolog(sname, sizeof(sname))) {
-+			nabu_iolog_dict(sname, "matching1", dict,
++		if (cepheus_iolog(sname, sizeof(sname))) {
++			cepheus_iolog_dict(sname, "matching1", dict,
 +			    *service ? (*service)->getMetaClass()->getClassName() : "none");
 +		}
 +#endif
@@ -107,11 +107,11 @@
  			continue;
  		}
  		IOTaskRegistryCompatibilityMatching(current_task(), dict);
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +		{
 +			char sname[32];
-+			if (nabu_iolog(sname, sizeof(sname))) {
-+				nabu_iolog_dict(sname, notification_type, dict, "notify");
++			if (cepheus_iolog(sname, sizeof(sname))) {
++				cepheus_iolog_dict(sname, notification_type, dict, "notify");
 +			}
 +		}
 +#endif
@@ -122,10 +122,10 @@
  	}
  
  	entry = IORegistryEntry::fromPath( path );
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +	{
 +		char sname[32];
-+		if (nabu_iolog(sname, sizeof(sname))) {
++		if (cepheus_iolog(sname, sizeof(sname))) {
 +			IOLog("IOK %s: path %.200s -> %s\n", sname, path,
 +			    entry ? entry->getMetaClass()->getClassName() : "none");
 +		}
@@ -138,10 +138,10 @@
  
  	*iterator = IOUserIterator::withIterator(entry->getChildIterator(
  		    IORegistryEntry::getPlane( plane )));
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +	{
 +		char sname[32];
-+		if (nabu_iolog(sname, sizeof(sname))) {
++		if (cepheus_iolog(sname, sizeof(sname))) {
 +			IOLog("IOK %s: children of %s in %.32s\n", sname, entry->getName(), plane);
 +		}
 +	}
@@ -153,10 +153,10 @@
  #endif
  		res = service->newUserClient( owningTask, (void *) owningTask,
  		    connect_type, propertiesDict, &client );
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +		{
 +			char sname[32];
-+			if (nabu_iolog(sname, sizeof(sname))) {
++			if (cepheus_iolog(sname, sizeof(sname))) {
 +				IOLog("IOK %s: open %s type %u -> 0x%x\n", sname,
 +				    service->getMetaClass()->getClassName(), connect_type, res);
 +			}

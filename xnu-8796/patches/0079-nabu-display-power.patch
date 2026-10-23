@@ -23,7 +23,7 @@
  	kNabuFBGetDotPitch             = 28,
  	kNabuFBNotifications           = 72,
 @@ -108,6 +114,8 @@
- 	uint8_t       fPending[NABU_FB_SWAP_REC_SIZE];     /* latest swap, not yet shown */
+ 	uint8_t       fPending[CEPHEUS_FB_SWAP_REC_SIZE];     /* latest swap, not yet shown */
  	bool          fDirty;
  	uint32_t      fFlushTicks;    /* vsync ticks between panel copies */
 +	bool          fPowerOff;      /* RequestPowerChange(0) */
@@ -33,7 +33,7 @@
  	void addClient(IOMobileFramebufferUserClient *client);
 @@ -216,6 +224,24 @@
  		    (IOMobileFramebufferUserClient *)fb->fClients->getObject(i);
- 		client->notify(NABU_FB_NOTIFY_VSYNC, values, 6);
+ 		client->notify(CEPHEUS_FB_NOTIFY_VSYNC, values, 6);
  	}
 +	if (fb->fPowerOff) {
 +		/* Fade out: halve every channel each vsync, then black, then idle. */
@@ -50,7 +50,7 @@
 +				}
 +			}
 +		}
-+		sender->setTimeoutUS(NABU_FB_VSYNC_US);
++		sender->setTimeoutUS(CEPHEUS_FB_VSYNC_US);
 +		return;
 +	}
  	bool flush = fb->fDirty && (count % fb->fFlushTicks) == 0;
@@ -70,7 +70,7 @@
 +				fFB->fDirty = true;     /* on: redraw the latest frame */
 +			}
 +			IOLockUnlock(fFB->fLock);
-+			IOLog("NABU FB: display %s\n", off ? "off" : "on");
++			IOLog("CEPHEUS FB: display %s\n", off ? "off" : "on");
 +		}
 +		break;
  	case kNabuFBSwapWait:

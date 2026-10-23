@@ -1,5 +1,5 @@
---- a/bsd/dev/nabu_usb.c
-+++ b/bsd/dev/nabu_usb.c
+--- a/bsd/dev/cepheus_usb.c
++++ b/bsd/dev/cepheus_usb.c
 @@ -146,6 +146,19 @@
  #define DEPCMDPAR0(n)   (0xc808 + 0x10 * (n))
  #define DEPCMD(n)       (0xc80c + 0x10 * (n))
@@ -27,12 +27,12 @@
 +	vm_offset_t qs = ml_io_map(QSCRATCH_PA, 0x100);
 +	if (qs != 0) {
 +		uint32_t hs = usb_rd(qs, QSCRATCH_HS_PHY_CTRL), ss = usb_rd(qs, QSCRATCH_SS_PHY_CTRL);
-+		printf("NABU USB: QSCRATCH HS_PHY_CTRL 0x%08x SS_PHY_CTRL 0x%08x GENERAL_CFG 0x%08x\n",
++		printf("CEPHEUS USB: QSCRATCH HS_PHY_CTRL 0x%08x SS_PHY_CTRL 0x%08x GENERAL_CFG 0x%08x\n",
 +		    hs, ss, usb_rd(qs, 0x08));
 +		*(volatile uint32_t *)(qs + QSCRATCH_HS_PHY_CTRL) = hs | UTMI_OTG_VBUS_VALID | SW_SESSVLD_SEL;
 +		*(volatile uint32_t *)(qs + QSCRATCH_SS_PHY_CTRL) = ss | LANE0_PWR_PRESENT;
 +		__asm__ volatile ("dsb sy" ::: "memory");
-+		printf("NABU USB: VBUS override on: HS_PHY_CTRL 0x%08x SS_PHY_CTRL 0x%08x\n",
++		printf("CEPHEUS USB: VBUS override on: HS_PHY_CTRL 0x%08x SS_PHY_CTRL 0x%08x\n",
 +		    usb_rd(qs, QSCRATCH_HS_PHY_CTRL), usb_rd(qs, QSCRATCH_SS_PHY_CTRL));
 +	}
 +

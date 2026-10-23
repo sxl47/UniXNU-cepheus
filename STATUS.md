@@ -5,6 +5,9 @@
 ## 当前状态：骨架完成，待真机实测
 
 - [x] 从 nabu 复制并重命名：configs / kits / scripts / CI workflow
+- [x] 83 个 XNU 补丁内容统一改名（cepheus-fbcon / cepheus_early 符号链自洽）
+- [x] `scripts/make-cepheus-adt.py` 完成（含 /cepheus-fbcon 节点，本地验证通过）
+- [x] workflow MACHINE_CONFIG 改为 CEPHEUS（匹配补丁 0006 的 MASTER.arm64.cepheus）
 - [x] board.toml 改为 cepheus（TODO_MEASURE 占位）
 - [x] TODO-MEASURE.md 实测清单
 - [ ] 克隆 Lux12138/UniXNU fork，取 make-nabu-adt.py 做底本 → make-cepheus-adt.py

@@ -5,12 +5,12 @@ diff --git a/libkern/crypto/corecrypto_aes.c b/libkern/crypto/corecrypto_aes.c
  #include <corecrypto/ccaes.h>
  #include <kern/debug.h>
  
-+#if defined(ARM64_BOARD_CONFIG_NABU)
-+/* NABU has a built-in portable AES provider for the legacy CBC/ECB API. */
-+extern const struct ccmode_cbc nabu_aes_cbc_encrypt;
-+extern const struct ccmode_cbc nabu_aes_cbc_decrypt;
-+#define AES_CBC_ENCRYPT_MODE (&nabu_aes_cbc_encrypt)
-+#define AES_CBC_DECRYPT_MODE (&nabu_aes_cbc_decrypt)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++/* CEPHEUS has a built-in portable AES provider for the legacy CBC/ECB API. */
++extern const struct ccmode_cbc cepheus_aes_cbc_encrypt;
++extern const struct ccmode_cbc cepheus_aes_cbc_decrypt;
++#define AES_CBC_ENCRYPT_MODE (&cepheus_aes_cbc_encrypt)
++#define AES_CBC_DECRYPT_MODE (&cepheus_aes_cbc_decrypt)
 +#else
 +#define AES_CBC_ENCRYPT_MODE (g_crypto_funcs->ccaes_cbc_encrypt)
 +#define AES_CBC_DECRYPT_MODE (g_crypto_funcs->ccaes_cbc_decrypt)
@@ -58,12 +58,12 @@ diff --git a/libkern/conf/files b/libkern/conf/files
  libkern/crypto/corecrypto_md5.c			optional crypto
  libkern/crypto/corecrypto_des.c			optional crypto
  libkern/crypto/corecrypto_aes.c			optional crypto
-+libkern/crypto/nabu_aes.c	optional crypto
-+libkern/crypto/nabu_aes_ct.c	optional crypto
-+libkern/crypto/nabu_aes_ct_enc.c	optional crypto
-+libkern/crypto/nabu_aes_ct_dec.c	optional crypto
-+libkern/crypto/nabu_aes_ct_cbcenc.c	optional crypto
-+libkern/crypto/nabu_aes_ct_cbcdec.c	optional crypto
++libkern/crypto/cepheus_aes.c	optional crypto
++libkern/crypto/cepheus_aes_ct.c	optional crypto
++libkern/crypto/cepheus_aes_ct_enc.c	optional crypto
++libkern/crypto/cepheus_aes_ct_dec.c	optional crypto
++libkern/crypto/cepheus_aes_ct_cbcenc.c	optional crypto
++libkern/crypto/cepheus_aes_ct_cbcdec.c	optional crypto
  libkern/crypto/corecrypto_aesxts.c		optional crypto
  libkern/crypto/corecrypto_rand.c		optional crypto
  libkern/crypto/corecrypto_rsa.c		    optional crypto
@@ -75,43 +75,43 @@ diff --git a/libkern/conf/Makefile.template b/libkern/conf/Makefile.template
  CFLAGS+= -include meta_features.h -DLIBKERN_KERNEL_PRIVATE -DOSALLOCDEBUG=1
  SFLAGS+= -include meta_features.h
 +
-+ifeq ($(CURRENT_MACHINE_CONFIG),NABU)
-+NABU_AES_ROOT = $(SRCROOT)/libkern/crypto/nabu_bearssl
-+NABU_AES_INC = -I$(NABU_AES_ROOT)/inc -I$(NABU_AES_ROOT)/src
-+nabu_aes.o_INCFLAGS = $(NABU_AES_INC)
-+nabu_aes_ct.o_INCFLAGS = $(NABU_AES_INC)
-+nabu_aes_ct_enc.o_INCFLAGS = $(NABU_AES_INC)
-+nabu_aes_ct_dec.o_INCFLAGS = $(NABU_AES_INC)
-+nabu_aes_ct_cbcenc.o_INCFLAGS = $(NABU_AES_INC)
-+nabu_aes_ct_cbcdec.o_INCFLAGS = $(NABU_AES_INC)
-+nabu_aes.o_CFLAGS_ADD += -mgeneral-regs-only
-+nabu_aes_ct.o_CFLAGS_ADD += -mgeneral-regs-only
-+nabu_aes_ct_enc.o_CFLAGS_ADD += -mgeneral-regs-only
-+nabu_aes_ct_dec.o_CFLAGS_ADD += -mgeneral-regs-only
-+nabu_aes_ct_cbcenc.o_CFLAGS_ADD += -mgeneral-regs-only
-+nabu_aes_ct_cbcdec.o_CFLAGS_ADD += -mgeneral-regs-only
++ifeq ($(CURRENT_MACHINE_CONFIG),CEPHEUS)
++CEPHEUS_AES_ROOT = $(SRCROOT)/libkern/crypto/cepheus_bearssl
++CEPHEUS_AES_INC = -I$(CEPHEUS_AES_ROOT)/inc -I$(CEPHEUS_AES_ROOT)/src
++cepheus_aes.o_INCFLAGS = $(CEPHEUS_AES_INC)
++cepheus_aes_ct.o_INCFLAGS = $(CEPHEUS_AES_INC)
++cepheus_aes_ct_enc.o_INCFLAGS = $(CEPHEUS_AES_INC)
++cepheus_aes_ct_dec.o_INCFLAGS = $(CEPHEUS_AES_INC)
++cepheus_aes_ct_cbcenc.o_INCFLAGS = $(CEPHEUS_AES_INC)
++cepheus_aes_ct_cbcdec.o_INCFLAGS = $(CEPHEUS_AES_INC)
++cepheus_aes.o_CFLAGS_ADD += -mgeneral-regs-only
++cepheus_aes_ct.o_CFLAGS_ADD += -mgeneral-regs-only
++cepheus_aes_ct_enc.o_CFLAGS_ADD += -mgeneral-regs-only
++cepheus_aes_ct_dec.o_CFLAGS_ADD += -mgeneral-regs-only
++cepheus_aes_ct_cbcenc.o_CFLAGS_ADD += -mgeneral-regs-only
++cepheus_aes_ct_cbcdec.o_CFLAGS_ADD += -mgeneral-regs-only
 +corecrypto_aes.o_CFLAGS_ADD += -mgeneral-regs-only
 +endif
  
  # Runtime support functions don't interact well with LTO (9294679)
  stack_protector.o_CFLAGS_ADD += $(CFLAGS_NOLTO_FLAG)
-diff --git a/libkern/crypto/nabu_aes.c b/libkern/crypto/nabu_aes.c
+diff --git a/libkern/crypto/cepheus_aes.c b/libkern/crypto/cepheus_aes.c
 new file mode 100644
 --- /dev/null
-+++ b/libkern/crypto/nabu_aes.c
++++ b/libkern/crypto/cepheus_aes.c
 @@ -0,0 +1,111 @@
 +/*
-+ * NABU legacy AES CBC/ECB provider backed by BearSSL's portable bitslice AES.
++ * CEPHEUS legacy AES CBC/ECB provider backed by BearSSL's portable bitslice AES.
 + * Upstream sources and MIT license are staged by 0020-stage-bearssl.sh.
 + * No heap, SIMD or CPU crypto extension is needed. Contexts can be copied:
 + * their only pointer is the immutable BearSSL class descriptor.
 + */
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +#include <libkern/libkern.h>
 +#include <libkern/crypto/aes.h>
 +#include <corecrypto/ccmode.h>
 +#include <corecrypto/cc_error.h>
-+#include "nabu_bearssl/inc/bearssl_block.h"
++#include "cepheus_bearssl/inc/bearssl_block.h"
 +
 +_Static_assert(sizeof(br_aes_ct_cbcenc_keys) <= sizeof(aes_encrypt_ctx),
 +    "BearSSL encryption context does not fit the XNU AES ABI");
@@ -119,7 +119,7 @@ new file mode 100644
 +    "BearSSL decryption context does not fit the XNU AES ABI");
 +
 +static int
-+nabu_aes_encrypt_init(const struct ccmode_cbc *mode, cccbc_ctx *ctx,
++cepheus_aes_encrypt_init(const struct ccmode_cbc *mode, cccbc_ctx *ctx,
 +    size_t key_len, const void *key)
 +{
 +    (void)mode;
@@ -135,7 +135,7 @@ new file mode 100644
 +}
 +
 +static int
-+nabu_aes_decrypt_init(const struct ccmode_cbc *mode, cccbc_ctx *ctx,
++cepheus_aes_decrypt_init(const struct ccmode_cbc *mode, cccbc_ctx *ctx,
 +    size_t key_len, const void *key)
 +{
 +    (void)mode;
@@ -151,7 +151,7 @@ new file mode 100644
 +}
 +
 +static int
-+nabu_aes_check(const void *ctx, const void *iv, size_t nblocks,
++cepheus_aes_check(const void *ctx, const void *iv, size_t nblocks,
 +    const void *in, void *out, unsigned rounds)
 +{
 +    if (ctx == NULL || iv == NULL ||
@@ -168,11 +168,11 @@ new file mode 100644
 +}
 +
 +static int
-+nabu_aes_encrypt_cbc(const cccbc_ctx *ctx, cccbc_iv *iv, size_t nblocks,
++cepheus_aes_encrypt_cbc(const cccbc_ctx *ctx, cccbc_iv *iv, size_t nblocks,
 +    const void *in, void *out)
 +{
 +    const br_aes_ct_cbcenc_keys *key = (const void *)ctx;
-+    int error = nabu_aes_check(ctx, iv, nblocks, in, out,
++    int error = cepheus_aes_check(ctx, iv, nblocks, in, out,
 +        key == NULL ? 0 : key->num_rounds);
 +    if (error != CCERR_OK || nblocks == 0) {
 +        return error;
@@ -184,11 +184,11 @@ new file mode 100644
 +}
 +
 +static int
-+nabu_aes_decrypt_cbc(const cccbc_ctx *ctx, cccbc_iv *iv, size_t nblocks,
++cepheus_aes_decrypt_cbc(const cccbc_ctx *ctx, cccbc_iv *iv, size_t nblocks,
 +    const void *in, void *out)
 +{
 +    const br_aes_ct_cbcdec_keys *key = (const void *)ctx;
-+    int error = nabu_aes_check(ctx, iv, nblocks, in, out,
++    int error = cepheus_aes_check(ctx, iv, nblocks, in, out,
 +        key == NULL ? 0 : key->num_rounds);
 +    if (error != CCERR_OK || nblocks == 0) {
 +        return error;
@@ -198,61 +198,61 @@ new file mode 100644
 +    return CCERR_OK;
 +}
 +
-+const struct ccmode_cbc nabu_aes_cbc_encrypt = {
++const struct ccmode_cbc cepheus_aes_cbc_encrypt = {
 +    .size = sizeof(br_aes_ct_cbcenc_keys),
 +    .block_size = 16,
-+    .init = nabu_aes_encrypt_init,
-+    .cbc = nabu_aes_encrypt_cbc,
++    .init = cepheus_aes_encrypt_init,
++    .cbc = cepheus_aes_encrypt_cbc,
 +};
-+const struct ccmode_cbc nabu_aes_cbc_decrypt = {
++const struct ccmode_cbc cepheus_aes_cbc_decrypt = {
 +    .size = sizeof(br_aes_ct_cbcdec_keys),
 +    .block_size = 16,
-+    .init = nabu_aes_decrypt_init,
-+    .cbc = nabu_aes_decrypt_cbc,
++    .init = cepheus_aes_decrypt_init,
++    .cbc = cepheus_aes_decrypt_cbc,
 +};
-+#endif /* ARM64_BOARD_CONFIG_NABU */
-diff --git a/libkern/crypto/nabu_aes_ct.c b/libkern/crypto/nabu_aes_ct.c
++#endif /* ARM64_BOARD_CONFIG_CEPHEUS */
+diff --git a/libkern/crypto/cepheus_aes_ct.c b/libkern/crypto/cepheus_aes_ct.c
 new file mode 100644
 --- /dev/null
-+++ b/libkern/crypto/nabu_aes_ct.c
++++ b/libkern/crypto/cepheus_aes_ct.c
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
-+#if defined(ARM64_BOARD_CONFIG_NABU)
-+#include "nabu_bearssl/src/symcipher/aes_ct.c"
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#include "cepheus_bearssl/src/symcipher/aes_ct.c"
 +#endif
-diff --git a/libkern/crypto/nabu_aes_ct_enc.c b/libkern/crypto/nabu_aes_ct_enc.c
+diff --git a/libkern/crypto/cepheus_aes_ct_enc.c b/libkern/crypto/cepheus_aes_ct_enc.c
 new file mode 100644
 --- /dev/null
-+++ b/libkern/crypto/nabu_aes_ct_enc.c
++++ b/libkern/crypto/cepheus_aes_ct_enc.c
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
-+#if defined(ARM64_BOARD_CONFIG_NABU)
-+#include "nabu_bearssl/src/symcipher/aes_ct_enc.c"
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#include "cepheus_bearssl/src/symcipher/aes_ct_enc.c"
 +#endif
-diff --git a/libkern/crypto/nabu_aes_ct_dec.c b/libkern/crypto/nabu_aes_ct_dec.c
+diff --git a/libkern/crypto/cepheus_aes_ct_dec.c b/libkern/crypto/cepheus_aes_ct_dec.c
 new file mode 100644
 --- /dev/null
-+++ b/libkern/crypto/nabu_aes_ct_dec.c
++++ b/libkern/crypto/cepheus_aes_ct_dec.c
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
-+#if defined(ARM64_BOARD_CONFIG_NABU)
-+#include "nabu_bearssl/src/symcipher/aes_ct_dec.c"
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#include "cepheus_bearssl/src/symcipher/aes_ct_dec.c"
 +#endif
-diff --git a/libkern/crypto/nabu_aes_ct_cbcenc.c b/libkern/crypto/nabu_aes_ct_cbcenc.c
+diff --git a/libkern/crypto/cepheus_aes_ct_cbcenc.c b/libkern/crypto/cepheus_aes_ct_cbcenc.c
 new file mode 100644
 --- /dev/null
-+++ b/libkern/crypto/nabu_aes_ct_cbcenc.c
++++ b/libkern/crypto/cepheus_aes_ct_cbcenc.c
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
-+#if defined(ARM64_BOARD_CONFIG_NABU)
-+#include "nabu_bearssl/src/symcipher/aes_ct_cbcenc.c"
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#include "cepheus_bearssl/src/symcipher/aes_ct_cbcenc.c"
 +#endif
-diff --git a/libkern/crypto/nabu_aes_ct_cbcdec.c b/libkern/crypto/nabu_aes_ct_cbcdec.c
+diff --git a/libkern/crypto/cepheus_aes_ct_cbcdec.c b/libkern/crypto/cepheus_aes_ct_cbcdec.c
 new file mode 100644
 --- /dev/null
-+++ b/libkern/crypto/nabu_aes_ct_cbcdec.c
++++ b/libkern/crypto/cepheus_aes_ct_cbcdec.c
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
-+#if defined(ARM64_BOARD_CONFIG_NABU)
-+#include "nabu_bearssl/src/symcipher/aes_ct_cbcdec.c"
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#include "cepheus_bearssl/src/symcipher/aes_ct_cbcdec.c"
 +#endif

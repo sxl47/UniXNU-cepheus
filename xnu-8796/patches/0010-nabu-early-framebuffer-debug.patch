@@ -6,7 +6,7 @@ index e26a1d7..e3579f1 100644
  #include <pexpert/arm/consistent_debug.h>
  #include <pexpert/device_tree.h>
  #include <arm64/proc_reg.h>
-+#include <arm64/nabu_early.h>
++#include <arm64/cepheus_early.h>
  #include <arm/pmap.h>
  #include <arm/caches_internal.h>
  #include <arm/cpu_internal.h>
@@ -14,7 +14,7 @@ index e26a1d7..e3579f1 100644
  	DTEntry chosen = NULL;
  	unsigned int dt_entry_size = 0;
  
-+	nabu_early_mark(1, "arm_init entered (MMU on)");
++	cepheus_early_mark(1, "arm_init entered (MMU on)");
 +
  	arm_setup_pre_sign();
  
@@ -23,7 +23,7 @@ index e26a1d7..e3579f1 100644
  #endif /* defined(HAS_APPLE_PAC) */
  
  	PE_init_platform(FALSE, args); /* Get platform expert set up */
-+	nabu_early_mark(2, "PE_init_platform done");
++	cepheus_early_mark(2, "PE_init_platform done");
  
  #if __arm64__
  	configure_timer_apple_regs();
@@ -31,7 +31,7 @@ index e26a1d7..e3579f1 100644
  #endif
  
  	ml_parse_cpu_topology();
-+	nabu_early_mark(3, "ml_parse_cpu_topology done");
++	cepheus_early_mark(3, "ml_parse_cpu_topology done");
  
  
  	master_cpu = ml_get_boot_cpu_number();
@@ -39,13 +39,13 @@ index e26a1d7..e3579f1 100644
  	 */
  	thread->machine.preemption_count = 0;
  	cpu_bootstrap();
-+	nabu_early_mark(4, "cpu_bootstrap done");
++	cepheus_early_mark(4, "cpu_bootstrap done");
  
  	rtclock_early_init();
  
  	kernel_debug_string_early("kernel_startup_bootstrap");
  	kernel_startup_bootstrap();
-+	nabu_early_mark(5, "kernel_startup_bootstrap done");
++	cepheus_early_mark(5, "kernel_startup_bootstrap done");
  
  	/*
  	 * Initialize the timer callout world
@@ -53,7 +53,7 @@ index e26a1d7..e3579f1 100644
  
  	cpu_init();
  
-+	nabu_early_mark(6, "cpu_init done");
++	cepheus_early_mark(6, "cpu_init done");
  	processor_bootstrap();
  
  	if (PE_parse_boot_argn("maxmem", &maxmem, sizeof(maxmem))) {
@@ -61,7 +61,7 @@ index e26a1d7..e3579f1 100644
  	__builtin_arm_wsr("pan", 1);
  #endif  /* __ARM_PAN_AVAILABLE__ */
  
-+	nabu_early_mark(7, "entering arm_vm_init");
++	cepheus_early_mark(7, "entering arm_vm_init");
  	arm_vm_init(xmaxmem, args);
  
  	if (debug_boot_arg) {
@@ -73,7 +73,7 @@ index d89b0f1..d0c710d 100644
  #include <machine/atomic.h>
  #include <arm64/proc_reg.h>
  #include <arm64/lowglobals.h>
-+#include <arm64/nabu_early.h>
++#include <arm64/cepheus_early.h>
  #include <arm/cpu_data_internal.h>
  #include <arm/misc_protos.h>
  #include <pexpert/arm64/boot.h>
@@ -82,7 +82,7 @@ index d89b0f1..d0c710d 100644
  	ml_enable_monitor();
  
 +	/* The framebuffer VA=PA mapping belongs to the outgoing TTBR0. */
-+	nabu_early_disable();
++	cepheus_early_disable();
  	set_mmu_ttb(invalid_ttep & TTBR_BADDR_MASK);
  
  	flush_mmu_tlb();
@@ -94,22 +94,22 @@ index ccbb188..777aca4 100644
  	mov		x20, x0
  	mov		x21, #0
  
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +	/* Stage 0: white 64x32 band, no stack or page tables needed. */
 +	MOV64	x0, (0x9c000000 + 2368 * 4320)
 +	mov		w1, #-1
 +	mov		x2, #32
 +	mov		x4, #4320
-+Lnabu_mark_row:
++Lcepheus_mark_row:
 +	mov		x3, #64
 +	mov		x5, x0
-+Lnabu_mark_pixel:
++Lcepheus_mark_pixel:
 +	str		w1, [x5], #4
 +	subs	x3, x3, #1
-+	b.ne	Lnabu_mark_pixel
++	b.ne	Lcepheus_mark_pixel
 +	add		x0, x0, x4
 +	subs	x2, x2, #1
-+	b.ne	Lnabu_mark_row
++	b.ne	Lcepheus_mark_row
 +	dsb		sy
 +#endif
 +
@@ -120,12 +120,12 @@ index ccbb188..777aca4 100644
  	lsr		x5,  x24, #(ARM_TT_L2_SHIFT)
  	create_bootstrap_mapping x14, x15, x5, x3, x2, x9, x10, x11, x12, x13
  
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +	/*
 +	 * Splash framebuffer: one 32MB Normal-NC block in the EXISTING V=P
 +	 * L2 table. Both framebuffer and RAM use L1 index 0; another call to
 +	 * create_bootstrap_mapping would replace the RAM L2 table.
-+	 * NABU uses 16K pages and all bring-up RAM is below 4GB, so the first
++	 * CEPHEUS uses 16K pages and all bring-up RAM is below 4GB, so the first
 +	 * V=P L2 page is bootstrap_pagetables + 2*PGBYTES.
 +	 */
 +	MOV64	x10, 0x9c000000
@@ -140,11 +140,11 @@ index ccbb188..777aca4 100644
  	/* Ensure TTEs are visible */
  	dsb		ish
  
-diff --git a/osfmk/arm64/nabu_early.c b/osfmk/arm64/nabu_early.c
+diff --git a/osfmk/arm64/cepheus_early.c b/osfmk/arm64/cepheus_early.c
 new file mode 100644
 index 0000000..8f4c808
 --- /dev/null
-+++ b/osfmk/arm64/nabu_early.c
++++ b/osfmk/arm64/cepheus_early.c
 @@ -0,0 +1,130 @@
 +/*
 + * Redmi Note 10 Pro bootstrap console. No allocation, locks, ADT parsing or
@@ -152,9 +152,9 @@ index 0000000..8f4c808
 + * start.s maps the splash framebuffer VA=PA as Normal Non-Cacheable memory.
 + * Stop using that mapping before arm_vm_init tears down bootstrap TTBR0.
 + */
-+#include <arm64/nabu_early.h>
++#include <arm64/cepheus_early.h>
 +
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +#include <stdint.h>
 +#include <kern/misc_protos.h>
 +
@@ -175,7 +175,7 @@ index 0000000..8f4c808
 +static unsigned int early_started, early_disabled, early_panicking;
 +
 +static void
-+nabu_early_clear_row(void)
++cepheus_early_clear_row(void)
 +{
 +	for (unsigned int y = 0; y < EARLY_CELL_H; y++) {
 +		volatile uint32_t *line = EARLY_FB + (early_row * EARLY_CELL_H + y) * EARLY_STRIDE;
@@ -186,14 +186,14 @@ index 0000000..8f4c808
 +}
 +
 +void
-+nabu_early_putc(char c)
++cepheus_early_putc(char c)
 +{
 +	if (early_disabled) {
 +		return;
 +	}
 +	if (!early_started) {
 +		early_started = 1;
-+		nabu_early_clear_row();
++		cepheus_early_clear_row();
 +	}
 +	if (c == '\r') {
 +		early_col = 0;
@@ -202,7 +202,7 @@ index 0000000..8f4c808
 +	if (c == '\n' || early_col == EARLY_COLS) {
 +		early_col = 0;
 +		early_row = (early_row + 1) % EARLY_ROWS;
-+		nabu_early_clear_row();
++		cepheus_early_clear_row();
 +		if (c == '\n') {
 +			return;
 +		}
@@ -225,15 +225,15 @@ index 0000000..8f4c808
 +}
 +
 +static void
-+nabu_early_string(const char *s)
++cepheus_early_string(const char *s)
 +{
 +	while (*s) {
-+		nabu_early_putc(*s++);
++		cepheus_early_putc(*s++);
 +	}
 +}
 +
 +void
-+nabu_early_mark(unsigned int stage, const char *label)
++cepheus_early_mark(unsigned int stage, const char *label)
 +{
 +	if (early_disabled || stage > 8) {
 +		return;
@@ -245,62 +245,62 @@ index 0000000..8f4c808
 +		}
 +	}
 +	__asm__ volatile("dsb sy" ::: "memory");
-+	nabu_early_string("NABU EARLY ");
-+	nabu_early_putc((char)('0' + stage));
-+	nabu_early_string(": ");
-+	nabu_early_string(label);
-+	nabu_early_putc('\n');
++	cepheus_early_string("CEPHEUS EARLY ");
++	cepheus_early_putc((char)('0' + stage));
++	cepheus_early_string(": ");
++	cepheus_early_string(label);
++	cepheus_early_putc('\n');
 +}
 +
 +void
-+nabu_early_panic(const char *fmt, va_list *args)
++cepheus_early_panic(const char *fmt, va_list *args)
 +{
 +	if (early_disabled || early_panicking) {
 +		return;
 +	}
 +	early_panicking = 1;
-+	nabu_early_string("\nNABU EARLY PANIC: ");
++	cepheus_early_string("\nCEPHEUS EARLY PANIC: ");
 +	va_list copy;
 +	va_copy(copy, *args);
-+	_doprnt(fmt, &copy, nabu_early_putc, 16);
++	_doprnt(fmt, &copy, cepheus_early_putc, 16);
 +	va_end(copy);
-+	nabu_early_putc('\n');
++	cepheus_early_putc('\n');
 +	__asm__ volatile("dsb sy" ::: "memory");
 +}
 +
 +void
-+nabu_early_disable(void)
++cepheus_early_disable(void)
 +{
-+	nabu_early_mark(8, "leaving bootstrap TTBR0");
++	cepheus_early_mark(8, "leaving bootstrap TTBR0");
 +	early_disabled = 1;
 +	__asm__ volatile("dsb sy" ::: "memory");
 +}
-+#endif /* NABU */
-diff --git a/osfmk/arm64/nabu_early.h b/osfmk/arm64/nabu_early.h
++#endif /* CEPHEUS */
+diff --git a/osfmk/arm64/cepheus_early.h b/osfmk/arm64/cepheus_early.h
 new file mode 100644
 index 0000000..fbbc827
 --- /dev/null
-+++ b/osfmk/arm64/nabu_early.h
++++ b/osfmk/arm64/cepheus_early.h
 @@ -0,0 +1,22 @@
 +/* Early screen diagnostics, valid only while the bootstrap TTBR0 is live. */
-+#ifndef _ARM64_NABU_EARLY_H_
-+#define _ARM64_NABU_EARLY_H_
++#ifndef _ARM64_CEPHEUS_EARLY_H_
++#define _ARM64_CEPHEUS_EARLY_H_
 +
 +#include <pexpert/arm64/board_config.h>
 +#include <stdarg.h>
 +
-+#if defined(NABU)
-+void nabu_early_mark(unsigned int stage, const char *label);
-+void nabu_early_putc(char c);
-+void nabu_early_panic(const char *fmt, va_list *args);
-+void nabu_early_disable(void);
++#if defined(CEPHEUS)
++void cepheus_early_mark(unsigned int stage, const char *label);
++void cepheus_early_putc(char c);
++void cepheus_early_panic(const char *fmt, va_list *args);
++void cepheus_early_disable(void);
 +#else
-+static inline void nabu_early_mark(unsigned int stage, const char *label)
++static inline void cepheus_early_mark(unsigned int stage, const char *label)
 +{
 +	(void)stage;
 +	(void)label;
 +}
-+static inline void nabu_early_disable(void) {}
++static inline void cepheus_early_disable(void) {}
 +#endif
 +
 +#endif
@@ -312,7 +312,7 @@ index c40d57b..b0dad49 100644
  osfmk/arm/arm_timer.c		standard
  osfmk/arm/arm_init.c	optional config_pmap_ppl
  osfmk/arm64/arm_vm_init.c	optional config_pmap_ppl
-+osfmk/arm64/nabu_early.c	standard
++osfmk/arm64/cepheus_early.c	standard
  osfmk/arm64/arm64_hypercall.c	standard
  osfmk/arm/io_map.c		standard
  osfmk/arm64/loose_ends.c	standard
@@ -325,7 +325,7 @@ index 0a00656..437adb1 100644
  #include <sys/pgo.h>
  #include <console/serial_protos.h>
 +#if defined(__arm64__)
-+#include <arm64/nabu_early.h>
++#include <arm64/cepheus_early.h>
 +#endif
  #include <IOKit/IOBSD.h>
  
@@ -334,9 +334,9 @@ index 0a00656..437adb1 100644
  {
  #pragma clang diagnostic pop
  
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +	/* No CPU/thread/debugger state is required for this first panic copy. */
-+	nabu_early_panic(panic_format_str, panic_args);
++	cepheus_early_panic(panic_format_str, panic_args);
 +#endif
 +
  #if defined(__x86_64__) && (DEVELOPMENT || DEBUG)

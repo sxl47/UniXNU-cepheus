@@ -7,7 +7,7 @@ index 8460893..9a748ea 100644
  SUPPORTED_ARM64_MACHINE_CONFIGS = NONE
  else
 -SUPPORTED_ARM64_MACHINE_CONFIGS = BCM2837 T6000 T8101 T8103 VMAPPLE
-+SUPPORTED_ARM64_MACHINE_CONFIGS = BCM2837 T6000 T8101 T8103 VMAPPLE NABU
++SUPPORTED_ARM64_MACHINE_CONFIGS = BCM2837 T6000 T8101 T8103 VMAPPLE CEPHEUS
  
  endif
  
@@ -15,7 +15,7 @@ index 8460893..9a748ea 100644
  MACHINE_FLAGS_ARM64_T6000 = -DARM64_BOARD_CONFIG_T6000 		-mcpu=apple-a14
  MACHINE_FLAGS_ARM64_VMAPPLE = -DARM64_BOARD_CONFIG_VMAPPLE              -march=armv8.5a
  MACHINE_FLAGS_ARM64_BCM2837 = -DARM64_BOARD_CONFIG_BCM2837
-+MACHINE_FLAGS_ARM64_NABU = -DARM64_BOARD_CONFIG_NABU                -march=armv8.2-a+crypto
++MACHINE_FLAGS_ARM64_CEPHEUS = -DARM64_BOARD_CONFIG_CEPHEUS                -march=armv8.2-a+crypto
  
  
  #
@@ -23,8 +23,8 @@ index 8460893..9a748ea 100644
  # Without embdedded device map, use a default arch string
  export ARCH_STRING_FOR_CURRENT_MACHINE_CONFIG := $(shell echo $(CURRENT_ARCH_CONFIG) | tr A-Z a-z)
  ifneq ($(filter arm64,$(ARCH_STRING_FOR_CURRENT_MACHINE_CONFIG)),)
-+# nabu's Cortex-A76/A55 have no pointer authentication: stay plain arm64
-+ifneq ($(CURRENT_MACHINE_CONFIG),NABU)
++# cepheus's Cortex-A76/A55 have no pointer authentication: stay plain arm64
++ifneq ($(CURRENT_MACHINE_CONFIG),CEPHEUS)
  export ARCH_STRING_FOR_CURRENT_MACHINE_CONFIG := arm64e
  endif
 +endif
@@ -39,7 +39,7 @@ index 133b07f..e01c124 100644
  /* D-Cache. */
  #define MMU_CLINE   6
  
-+#elif defined (NABU) /* Qualcomm Kryo 470: Cortex-A76 + Cortex-A55 */
++#elif defined (CEPHEUS) /* Qualcomm Kryo 470: Cortex-A76 + Cortex-A55 */
 +
 +/* I-Cache. */
 +#define MMU_I_CLINE 6
@@ -66,9 +66,9 @@ index c40c6ea..9888608 100644
  #endif
  
  
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +	/*
-+	 * nabu: TrustZone owns GIC Group 0, so the timer and IPIs that other
++	 * cepheus: TrustZone owns GIC Group 0, so the timer and IPIs that other
 +	 * ARM64 targets take as FIQs arrive here as Group 1 IRQs.
 +	 */
 +	uint64_t iar = __builtin_arm_rsr64("ICC_IAR1_EL1");
@@ -77,7 +77,7 @@ index c40c6ea..9888608 100644
 +	if (intid >= 1020 && intid <= 1023) {
 +		return; /* spurious */
 +	}
-+	if (intid == NABU_VTIMER_INTID) {
++	if (intid == CEPHEUS_VTIMER_INTID) {
 +		sleh_interrupt_handler_prologue(state, DBG_INTR_TYPE_TIMER);
 +		cdp->cpu_decrementer = -1; /* Large */
 +		INTERRUPT_MASKED_DEBUG_START(rtclock_intr, DBG_INTR_TYPE_TIMER);
@@ -109,7 +109,7 @@ index c40c6ea..9888608 100644
  	    cdp->interrupt_nub,
  	    cdp->interrupt_source);
  #endif
-+#endif /* NABU */
++#endif /* CEPHEUS */
  
  	entropy_collect();
  
@@ -122,12 +122,12 @@ index e5336e5..f8d0d2e 100644
  	isb		sy
  
 -#if !VMAPPLE
-+#if !VMAPPLE && !defined(NABU)
++#if !VMAPPLE && !defined(CEPHEUS)
  	MOV64   x1, SCTLR_EL1_DEFAULT
  	cmp		x0, x1
  	bne		.
 -#endif /* !VMAPPLE */
-+#endif /* !VMAPPLE && !NABU */
++#endif /* !VMAPPLE && !CEPHEUS */
  
  #if (!CONFIG_KERNEL_INTEGRITY || (CONFIG_KERNEL_INTEGRITY && !defined(KERNEL_INTEGRITY_WT)))
  	/* Watchtower
@@ -139,7 +139,7 @@ index 3ad743f..4ec6989 100644
  		}
  	}
  
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +	/*
 +	 * Real hardware with two security states: Group 0 is TrustZone's and
 +	 * non-secure writes to it are ignored. Everything we own is Group 1 NS
@@ -150,14 +150,14 @@ index 3ad743f..4ec6989 100644
 +	for (unsigned int i = 0; i < 32; i += 4) {
 +		gicr_write32(GICR_IPRIORITYR0 + i, 0xA0A0A0A0);
 +	}
-+	gicr_write32(GICR_ISENABLER0, (1U << NABU_VTIMER_INTID) | (1U << NABU_IPI_SGI));
++	gicr_write32(GICR_ISENABLER0, (1U << CEPHEUS_VTIMER_INTID) | (1U << CEPHEUS_IPI_SGI));
 +#else
  	// Configure timers and legacy FIQ to be group 0
  	gicr_write32(GICR_IGROUPR0, 0x81FFFFFF);
  
  	// Enable PPI 27
  	gicr_write32(GICR_ISENABLER0, (1 << 27));
-+#endif /* NABU */
++#endif /* CEPHEUS */
  
  	// Enable system register access
  	uint64_t icc_sre = __builtin_arm_rsr64("ICC_SRE_EL1");
@@ -165,12 +165,12 @@ index 3ad743f..4ec6989 100644
  	__builtin_arm_wsr64("ICC_SRE_EL1", icc_sre);
  	__builtin_arm_isb(ISB_SY);
  
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +	__builtin_arm_wsr64("ICC_BPR1_EL1", 0);
 +#else
  	// Set priority masks and binary point for group 0
  	__builtin_arm_wsr64("ICC_BPR0_EL1", 0);
-+#endif /* NABU */
++#endif /* CEPHEUS */
  	__builtin_arm_wsr64("ICC_PMR_EL1", 0xFF);
  
  	// Set EOI mode of this processor
@@ -178,7 +178,7 @@ index 3ad743f..4ec6989 100644
  	icc_ctlr &= ~ICC_CTLR_EOIMODE;
  	__builtin_arm_wsr64("ICC_CTLR_EL1", icc_ctlr);
  
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +	// ABL leaves only ARE_NS set; Linux writes ARE_NS | EnableGrp1A | EnableGrp1
 +	uint32_t gicd_ctlr = gicd_read32(GICD_CTLR);
 +	gicd_ctlr |= GICD_CTLR_ARE_NS | GICD_CTLR_ENABLEGRP1A | GICD_CTLR_ENABLEGRP1;
@@ -195,7 +195,7 @@ index 3ad743f..4ec6989 100644
  	gicd_write32(GICD_CTLR, gicd_ctlr);
  	__builtin_arm_wsr64("ICC_IGRPEN0_EL1", 1);
  	__builtin_arm_isb(ISB_SY);
-+#endif /* NABU */
++#endif /* CEPHEUS */
  }
  #else
  void
@@ -209,18 +209,18 @@ index 8226b8c..c7d274f 100644
  	VMAPPLE.h \
 -	BCM2837.h
 +	BCM2837.h \
-+	NABU.h
++	CEPHEUS.h
  
  
  # Headers installed into System.framework/PrivateHeaders (userspace internal SDK only).
-diff --git a/pexpert/pexpert/arm64/NABU.h b/pexpert/pexpert/arm64/NABU.h
+diff --git a/pexpert/pexpert/arm64/CEPHEUS.h b/pexpert/pexpert/arm64/CEPHEUS.h
 new file mode 100644
 index 0000000..a044ad0
 --- /dev/null
-+++ b/pexpert/pexpert/arm64/NABU.h
++++ b/pexpert/pexpert/arm64/CEPHEUS.h
 @@ -0,0 +1,75 @@
 +/*
-+ * Board config for the Redmi Note 10 Pro ("nabu", Qualcomm SM7150 /
++ * Board config for the Redmi Note 10 Pro ("cepheus", Qualcomm SM7150 /
 + * Snapdragon 732G): Kryo 470 = Cortex-A76 + Cortex-A55, ARMv8.2, no PAC.
 + *
 + * Generic ARM like BCM2837 (no APPLE_ARM64_ARCH_FAMILY: none of Apple's
@@ -230,13 +230,13 @@ index 0000000..a044ad0
 + * including the timer, is a Group 1 IRQ taken through sleh_irq().
 + */
 +
-+#ifndef _PEXPERT_ARM64_NABU_H
-+#define _PEXPERT_ARM64_NABU_H
++#ifndef _PEXPERT_ARM64_CEPHEUS_H
++#define _PEXPERT_ARM64_CEPHEUS_H
 +
 +#define NO_MONITOR                1
 +#define NO_ECORE                  1
 +
-+#define NABU                     1
++#define CEPHEUS                     1
 +
 +#define ARM_ARCH_TIMER
 +#define __ARM_ARCH__              8
@@ -260,8 +260,8 @@ index 0000000..a044ad0
 + * virt, hyp) instead of the usual 13/14/11/10: the virtual timer XNU uses
 + * (CNTV) is INTID 16 + 3 = 19.
 + */
-+#define NABU_VTIMER_INTID        19
-+#define NABU_IPI_SGI             1       // SGI used for cross-CPU signals
++#define CEPHEUS_VTIMER_INTID        19
++#define CEPHEUS_IPI_SGI             1       // SGI used for cross-CPU signals
 +
 +#define GIC_SPURIOUS_IRQ          1023    // IRQ no. for GIC spurious interrupt
 +
@@ -293,7 +293,7 @@ index 0000000..a044ad0
 +#define ICC_SRE_SRE                             0x1
 +/* End of GICv3 register definitions */
 +
-+#endif /* ! _PEXPERT_ARM64_NABU_H */
++#endif /* ! _PEXPERT_ARM64_CEPHEUS_H */
 diff --git a/pexpert/pexpert/arm64/board_config.h b/pexpert/pexpert/arm64/board_config.h
 index 9454534..88e524a 100644
 --- a/pexpert/pexpert/arm64/board_config.h
@@ -302,8 +302,8 @@ index 9454534..88e524a 100644
  #define CORE_NCTRS                     8 /* Placeholder; KPC is not enabled for this target */
  #endif  /* ARM64_BOARD_CONFIG_BCM2837 */
  
-+#ifdef ARM64_BOARD_CONFIG_NABU
-+#include <pexpert/arm64/NABU.h>
++#ifdef ARM64_BOARD_CONFIG_CEPHEUS
++#include <pexpert/arm64/CEPHEUS.h>
 +
 +#define MAX_L2_CLINE                   6
 +#define MAX_CPUS                       8
@@ -311,7 +311,7 @@ index 9454534..88e524a 100644
 +
 +#define CORE_NCTRS                     8 /* Placeholder; KPC is not enabled for this target */
 +
-+#endif  /* ARM64_BOARD_CONFIG_NABU */
++#endif  /* ARM64_BOARD_CONFIG_CEPHEUS */
 +
  #ifdef ARM64_BOARD_CONFIG_VMAPPLE
  #include <pexpert/arm64/VMAPPLE.h>

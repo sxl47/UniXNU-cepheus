@@ -1,5 +1,5 @@
---- a/bsd/kern/nabu_amfi.c
-+++ b/bsd/kern/nabu_amfi.c
+--- a/bsd/kern/cepheus_amfi.c
++++ b/bsd/kern/cepheus_amfi.c
 @@ -29,6 +29,7 @@
  #include <mach/kern_return.h>
  #include <sys/codesign.h>
@@ -9,7 +9,7 @@
  #include <sys/systm.h>
  #include <sys/ubc_internal.h>
 @@ -308,8 +309,46 @@
- 	.mpo_vnode_check_signature = nabu_amfi_vnode_check_signature,
+ 	.mpo_vnode_check_signature = cepheus_amfi_vnode_check_signature,
  };
  
 +/*
@@ -19,39 +19,39 @@
 + * PRIV_WORK_INTERVAL ("Failed to create work interval", SpringBoard).
 + * Grant that one; log the first denial of each other privilege per process.
 + */
-+#define NABU_PRIV_LOG_MAX      64
++#define CEPHEUS_PRIV_LOG_MAX      64
 +static struct {
 +	int  priv;
 +	char name[20];
-+} nabu_priv_logged[NABU_PRIV_LOG_MAX];
-+static int nabu_priv_logged_count;
++} cepheus_priv_logged[CEPHEUS_PRIV_LOG_MAX];
++static int cepheus_priv_logged_count;
 +
 +static int
-+nabu_sandbox_priv_grant(kauth_cred_t cred __unused, int priv)
++cepheus_sandbox_priv_grant(kauth_cred_t cred __unused, int priv)
 +{
 +	if (priv == PRIV_WORK_INTERVAL) {
 +		return 0;
 +	}
 +	char name[20];
 +	proc_selfname(name, sizeof(name));
-+	for (int i = 0; i < nabu_priv_logged_count; i++) {
-+		if (nabu_priv_logged[i].priv == priv &&
-+		    strncmp(nabu_priv_logged[i].name, name, sizeof(name)) == 0) {
++	for (int i = 0; i < cepheus_priv_logged_count; i++) {
++		if (cepheus_priv_logged[i].priv == priv &&
++		    strncmp(cepheus_priv_logged[i].name, name, sizeof(name)) == 0) {
 +			return EPERM;
 +		}
 +	}
-+	if (nabu_priv_logged_count < NABU_PRIV_LOG_MAX) {
-+		nabu_priv_logged[nabu_priv_logged_count].priv = priv;
-+		strlcpy(nabu_priv_logged[nabu_priv_logged_count].name, name, sizeof(name));
-+		nabu_priv_logged_count++;
-+		printf("NABU Sandbox: %s privilege %d denied\n", name, priv);
++	if (cepheus_priv_logged_count < CEPHEUS_PRIV_LOG_MAX) {
++		cepheus_priv_logged[cepheus_priv_logged_count].priv = priv;
++		strlcpy(cepheus_priv_logged[cepheus_priv_logged_count].name, name, sizeof(name));
++		cepheus_priv_logged_count++;
++		printf("CEPHEUS Sandbox: %s privilege %d denied\n", name, priv);
 +	}
 +	return EPERM;
 +}
 +
- static const struct mac_policy_ops nabu_sandbox_mac_ops = {
- 	.mpo_policy_syscall = nabu_sandbox_syscall,
-+	.mpo_priv_grant = nabu_sandbox_priv_grant,
+ static const struct mac_policy_ops cepheus_sandbox_mac_ops = {
+ 	.mpo_policy_syscall = cepheus_sandbox_syscall,
++	.mpo_priv_grant = cepheus_sandbox_priv_grant,
  };
  
- static struct mac_policy_conf nabu_sandbox_mac_conf = {
+ static struct mac_policy_conf cepheus_sandbox_mac_conf = {

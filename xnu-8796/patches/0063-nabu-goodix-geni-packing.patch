@@ -1,19 +1,19 @@
---- a/bsd/dev/nabu_touch.c
-+++ b/bsd/dev/nabu_touch.c
+--- a/bsd/dev/cepheus_touch.c
++++ b/bsd/dev/cepheus_touch.c
 @@ -3,7 +3,7 @@
   * Call once after the scheduler is running; all work runs on one thread.
-  * Requires ABL-loaded GENI I2C firmware; votes L11C through nabu_rpmh.c.
+  * Requires ABL-loaded GENI I2C firmware; votes L11C through cepheus_rpmh.c.
   * No firmware/config upload or direct PMIC writes. Only IC data write:
 - * zero to GT9896's event status after reading a report. See hw-report.md.
 + * zero to GT9896's event status after reading a report. See touch2/report.md.
   */
- #if defined(ARM64_BOARD_CONFIG_NABU)
+ #if defined(ARM64_BOARD_CONFIG_CEPHEUS)
  #include <sys/param.h>
 @@ -32,6 +32,11 @@
  #define TOUCH_MAX        10u
  #define TOUCH_GOODIX     1
  #define TOUCH_FTS        2
-+/* GT9896 is Yellowstone in Xiaomi nabu-r-oss, not the Berlin protocol. */
++/* GT9896 is Yellowstone in Xiaomi cepheus-r-oss, not the Berlin protocol. */
 +#define GOODIX_PID_REG   0x4022u
 +#define GOODIX_EVENT_REG 0x4180u
 +#define GOODIX_HEAD_LEN  8u
@@ -160,7 +160,7 @@
 +	st.sent = st.got = 0;
 +	int err = touch_msg_run(addr, tx, nt, rx, nr, stretch);
 +	if (st.probing) {
-+		printf("NABU TOUCH: probe xfer addr=%#x %s len=%u stretch=%u err=%d irq=%#x seen=%#x tx=%u rx=%u status=%#x\n",
++		printf("CEPHEUS TOUCH: probe xfer addr=%#x %s len=%u stretch=%u err=%d irq=%#x seen=%#x tx=%u rx=%u status=%#x\n",
 +		    addr, nr ? "read" : "write", nr ? nr : nt, stretch ? 1u : 0u,
 +		    err, st.irq_last, st.irq_status, st.sent, st.got,
 +		    touch_rd(st.se, SE_STATUS));
@@ -189,7 +189,7 @@
 +{
 +	memset(buf, 0xa5, 32);
 +	int err = touch_read(0x5d, reg, true, buf, 32);
-+	printf("NABU TOUCH: probe info reg=%#x len=32 err=%d irq=%#x seen=%#x\n",
++	printf("CEPHEUS TOUCH: probe info reg=%#x len=32 err=%d irq=%#x seen=%#x\n",
 +	    reg, err, st.irq_last, st.irq_status);
 +	if (!err) {
 +		for (unsigned off = 0; off < 32; off += 16) {
@@ -197,7 +197,7 @@
 +			for (unsigned j = 0; j < 16; ++j) {
 +				(void)snprintf(line + j * 3u, 4, "%02x ", buf[off + j]);
 +			}
-+			printf("NABU TOUCH: probe raw %#x: %s\n", reg + off, line);
++			printf("CEPHEUS TOUCH: probe raw %#x: %s\n", reg + off, line);
 +		}
 +	}
 +	return err;
@@ -276,18 +276,18 @@
  	touch_wr(st.se, 0x810, 0);
  	touch_wr(st.se, 0x814, ((rx >> 16) & 0x3fu) - 1u);
  	touch_wr(st.se, SE_IRQ_EN, SE_EVENTS);
-+	printf("NABU TOUCH: packing tx=%#x/%#x rx=%#x/%#x gran=%#x\n",
++	printf("CEPHEUS TOUCH: packing tx=%#x/%#x rx=%#x/%#x gran=%#x\n",
 +	    touch_rd(st.se, 0x260), touch_rd(st.se, 0x264),
 +	    touch_rd(st.se, 0x284), touch_rd(st.se, 0x288), touch_rd(st.se, 0x254));
 +	if (touch_rd(st.se, 0x260) != SE_PACK0 || touch_rd(st.se, 0x264) != SE_PACK1 ||
 +	    touch_rd(st.se, 0x284) != SE_PACK0 || touch_rd(st.se, 0x288) != SE_PACK1 ||
 +	    touch_rd(st.se, 0x254) != 0) {
-+		printf("NABU TOUCH: packing readback mismatch; probes skipped\n");
++		printf("CEPHEUS TOUCH: packing readback mismatch; probes skipped\n");
 +		return false;
 +	}
  	if ((touch_rd(st.se, SE_TX_COUNT) & 0xfffffffu) ||
  	    (touch_rd(st.se, SE_RX_COUNT) & 0x1ffffffu)) {
- 		printf("NABU TOUCH: inherited FIFO data; probes skipped\n");
+ 		printf("CEPHEUS TOUCH: inherited FIFO data; probes skipped\n");
 @@ -511,14 +589,17 @@
  	touch_wait(2);
  	touch_gpio(8, 0, 3, 3, true, true);
@@ -297,12 +297,12 @@
 +	uint8_t gid[32], legacy[32], fid1 = 0, fid2 = 0;
 +	st.probing = true;
 +	int ge = touch_probe_info(GOODIX_PID_REG, gid);
- 	printf("NABU TOUCH: probe 0x5d err=%d pid=%02x%02x%02x%02x fw=%02x.%02x.%02x.%02x irq=%#x\n",
+ 	printf("CEPHEUS TOUCH: probe 0x5d err=%d pid=%02x%02x%02x%02x fw=%02x.%02x.%02x.%02x irq=%#x\n",
  	    ge, gid[0], gid[1], gid[2], gid[3], gid[8], gid[9], gid[10], gid[11], st.irq_status);
 +	(void)touch_probe_info(0x8240, legacy);
  	int fe1 = touch_read(0x38, 0xa3, false, &fid1, 1);
  	int fe2 = touch_read(0x38, 0x9f, false, &fid2, 1);
- 	printf("NABU TOUCH: probe 0x38 err=%d/%d chip-id=%02x:%02x irq=%#x\n",
+ 	printf("CEPHEUS TOUCH: probe 0x38 err=%d/%d chip-id=%02x:%02x irq=%#x\n",
  	    fe1, fe2, fid1, fid2, st.irq_status);
 +	st.probing = false;
  	bool goodix = !ge && gid[0] == '9' && gid[1] == '8' && gid[2] == '9' && gid[3] == '6';

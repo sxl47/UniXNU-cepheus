@@ -13,9 +13,9 @@
  void task_act_iterate_wth_args(task_t, void (*)(thread_t, void *), void *);
  
 -#ifdef SECURE_KERNEL
-+#if defined(SECURE_KERNEL) || defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(SECURE_KERNEL) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +/*
-+ * NABU: off by default (sysctl kern.coredump=1 enables it). A crashing iOS
++ * CEPHEUS: off by default (sysctl kern.coredump=1 enables it). A crashing iOS
 + * daemon maps the whole shared region, so one core is gigabytes on the root
 + * volume and takes minutes on the phone's UFS.
 + */

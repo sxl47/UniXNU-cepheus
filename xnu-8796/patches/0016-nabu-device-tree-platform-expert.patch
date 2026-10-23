@@ -5,11 +5,11 @@ diff --git a/iokit/KernelConfigTables.cpp b/iokit/KernelConfigTables.cpp
  
  const char * gIOKernelConfigTables =
      "("
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +    "   {"
 +    "     'IOClass'         = NabuPlatformExpert;"
 +    "     'IOProviderClass' = IOPlatformExpertDevice;"
-+    "     'IONameMatch'     = 'xiaomi,nabu';"
++    "     'IONameMatch'     = 'xiaomi,cepheus';"
 +    "     'IOProbeScore'    = 10000:32;"
 +    "   },"
 +#endif
@@ -24,7 +24,7 @@ diff --git a/iokit/conf/files.arm64 b/iokit/conf/files.arm64
  # SMP
  iokit/Kernel/arm/AppleARMSMP.cpp    					optional iokitcpp
 +
-+# NABU device-tree platform (empty translation unit on other boards)
++# CEPHEUS device-tree platform (empty translation unit on other boards)
 +iokit/Kernel/arm/NabuPlatformExpert.cpp                         optional iokitcpp
 diff --git a/iokit/Kernel/arm/NabuPlatformExpert.cpp b/iokit/Kernel/arm/NabuPlatformExpert.cpp
 new file mode 100644
@@ -32,13 +32,13 @@ new file mode 100644
 +++ b/iokit/Kernel/arm/NabuPlatformExpert.cpp
 @@ -0,0 +1,86 @@
 +/*
-+ * Minimal device-tree platform expert for Redmi Note 10 Pro (nabu).
++ * Minimal device-tree platform expert for Redmi Note 10 Pro (cepheus).
 + * Uses XNU's normal platform, power-domain and nub initialization. Hardware
 + * interrupt and power-management services are supplied by separate drivers.
 + */
 +#include <pexpert/arm64/board_config.h>
 +
-+#if defined(NABU)
++#if defined(CEPHEUS)
 +#include <IOKit/IOPlatformExpert.h>
 +#include <IOKit/IODeviceTreeSupport.h>
 +#include <IOKit/IOLib.h>
@@ -60,12 +60,12 @@ new file mode 100644
 +bool
 +NabuPlatformExpert::start(IOService *provider)
 +{
-+	IOLog("NABU: starting device-tree platform expert\n");
++	IOLog("CEPHEUS: starting device-tree platform expert\n");
 +	if (!IODTPlatformExpert::start(provider)) {
 +		return false;
 +	}
 +	registerService();
-+	IOLog("NABU: platform expert registered\n");
++	IOLog("CEPHEUS: platform expert registered\n");
 +	return true;
 +}
 +
@@ -86,7 +86,7 @@ new file mode 100644
 +{
 +	/*
 +	 * The stock implementation requires an Apple NVRAM /options node.
-+	 * NABU has no NVRAM controller; publish real CPU/device nodes without
++	 * CEPHEUS has no NVRAM controller; publish real CPU/device nodes without
 +	 * inventing one. createNubs adds the topology's logical CPU/cluster IDs.
 +	 */
 +	IORegistryEntry *cpus = root->childFromPath("cpus", gIODTPlane);
@@ -103,7 +103,7 @@ new file mode 100644
 +	if (name == NULL || maxLength <= 0) {
 +		return false;
 +	}
-+	strlcpy(name, "nabu", (size_t)maxLength);
++	strlcpy(name, "cepheus", (size_t)maxLength);
 +	return true;
 +}
 +
@@ -116,4 +116,4 @@ new file mode 100644
 +	strlcpy(name, "Redmi Note 10 Pro", (size_t)maxLength);
 +	return true;
 +}
-+#endif /* NABU */
++#endif /* CEPHEUS */

@@ -665,22 +665,22 @@ diff --git a/bsd/conf/Makefile.template b/bsd/conf/Makefile.template
          -Warray-bounds-pointer-arithmetic
  SFLAGS+= -include meta_features.h
  
--# This provider is built into NABU; other boards use their normal kext.
--ifeq ($(CURRENT_MACHINE_CONFIG),NABU)
-+# This provider is built into NABU/NABU; other boards use their normal kext.
-+ifneq ($(filter $(CURRENT_MACHINE_CONFIG),NABU NABU),)
- NABU_PTHREAD_ROOT = $(SRCROOT)/bsd/pthread/nabu_libpthread
- NABU_PTHREAD_INC = -I$(NABU_PTHREAD_ROOT) -I$(NABU_PTHREAD_ROOT)/private -I$(NABU_PTHREAD_ROOT)/include
- nabu_pthread_init.o_INCFLAGS = $(NABU_PTHREAD_INC)
-diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
---- a/bsd/dev/nabu_ufs.c
-+++ b/bsd/dev/nabu_ufs.c
+-# This provider is built into CEPHEUS; other boards use their normal kext.
+-ifeq ($(CURRENT_MACHINE_CONFIG),CEPHEUS)
++# This provider is built into CEPHEUS/CEPHEUS; other boards use their normal kext.
++ifneq ($(filter $(CURRENT_MACHINE_CONFIG),CEPHEUS CEPHEUS),)
+ CEPHEUS_PTHREAD_ROOT = $(SRCROOT)/bsd/pthread/cepheus_libpthread
+ CEPHEUS_PTHREAD_INC = -I$(CEPHEUS_PTHREAD_ROOT) -I$(CEPHEUS_PTHREAD_ROOT)/private -I$(CEPHEUS_PTHREAD_ROOT)/include
+ cepheus_pthread_init.o_INCFLAGS = $(CEPHEUS_PTHREAD_INC)
+diff --git a/bsd/dev/cepheus_ufs.c b/bsd/dev/cepheus_ufs.c
+--- a/bsd/dev/cepheus_ufs.c
++++ b/bsd/dev/cepheus_ufs.c
 @@ -18,7 +18,7 @@
   * against the partition bounds again right before it is issued, so nothing
   * outside the named partition can be written.
   */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
  #include <sys/param.h>
  #include <sys/systm.h>
  #include <sys/buf.h>
@@ -688,8 +688,8 @@ diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
  		uint64_t now = mach_absolute_time();
  		if (now > deadline) {
  			ufs_wr(REG_UTRLCLR, ~1u);
--			printf("NABU UFS: command 0x%02x timed out\n", cdb[0]);
-+			printf("NABU UFS: command 0x%02x timed out\n", cdb[0]);
+-			printf("CEPHEUS UFS: command 0x%02x timed out\n", cdb[0]);
++			printf("CEPHEUS UFS: command 0x%02x timed out\n", cdb[0]);
  			return ETIMEDOUT;
  		}
  		if (sleepable && now >= spin_until) {
@@ -697,8 +697,8 @@ diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
  
  	uint32_t ocs = utrd->dw2 & 0xff;
  	if (ocs || ucd->resp[0] != 0x21 || ucd->resp[6] || ucd->resp[7]) {
--		printf("NABU UFS: command 0x%02x failed: ocs 0x%x upiu 0x%x response 0x%x status 0x%x\n",
-+		printf("NABU UFS: command 0x%02x failed: ocs 0x%x upiu 0x%x response 0x%x status 0x%x\n",
+-		printf("CEPHEUS UFS: command 0x%02x failed: ocs 0x%x upiu 0x%x response 0x%x status 0x%x\n",
++		printf("CEPHEUS UFS: command 0x%02x failed: ocs 0x%x upiu 0x%x response 0x%x status 0x%x\n",
  		    cdb[0], ocs, ucd->resp[0], ucd->resp[6], ucd->resp[7]);
  		return EIO;
  	}
@@ -706,8 +706,8 @@ diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
  	if (!su.writable || !su.nblocks || count == 0 || count > BOUNCE_SIZE / UFS_BLOCK ||
  	    lba < su.first_block || lba - su.first_block >= su.nblocks ||
  	    count > su.nblocks - (lba - su.first_block) || lba + count - 1 > UINT32_MAX) {
--		printf("NABU UFS: refusing write of %u blocks at 0x%llx\n", count, lba);
-+		printf("NABU UFS: refusing write of %u blocks at 0x%llx\n", count, lba);
+-		printf("CEPHEUS UFS: refusing write of %u blocks at 0x%llx\n", count, lba);
++		printf("CEPHEUS UFS: refusing write of %u blocks at 0x%llx\n", count, lba);
  		return EPERM;
  	}
  	uint8_t cdb[10] = {
@@ -715,8 +715,8 @@ diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
  		return error;
  	}
  	if (memcmp(b, "EFI PART", 8) != 0) {
--		printf("NABU UFS: LUN %u has no GPT\n", su.lun);
-+		printf("NABU UFS: LUN %u has no GPT\n", su.lun);
+-		printf("CEPHEUS UFS: LUN %u has no GPT\n", su.lun);
++		printf("CEPHEUS UFS: LUN %u has no GPT\n", su.lun);
  		return ENXIO;
  	}
  	uint64_t entry_lba;
@@ -724,8 +724,8 @@ diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
  	memcpy(&nent, b + 80, 4);
  	memcpy(&esz, b + 84, 4);
  	if (esz != 128 || nent == 0 || nent * esz > BOUNCE_SIZE) {
--		printf("NABU UFS: unsupported GPT entries %u x %u\n", nent, esz);
-+		printf("NABU UFS: unsupported GPT entries %u x %u\n", nent, esz);
+-		printf("CEPHEUS UFS: unsupported GPT entries %u x %u\n", nent, esz);
++		printf("CEPHEUS UFS: unsupported GPT entries %u x %u\n", nent, esz);
  		return ENXIO;
  	}
  	error = ufs_read_blocks(entry_lba, (nent * esz + UFS_BLOCK - 1) / UFS_BLOCK);
@@ -733,8 +733,8 @@ diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
  		su.nblocks = last - first + 1;
  		return 0;
  	}
--	printf("NABU UFS: no GPT partition named \"%s\"\n", want);
-+	printf("NABU UFS: no GPT partition named \"%s\"\n", want);
+-	printf("CEPHEUS UFS: no GPT partition named \"%s\"\n", want);
++	printf("CEPHEUS UFS: no GPT partition named \"%s\"\n", want);
  	return ENOENT;
  }
  
@@ -742,19 +742,19 @@ diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
  {
  	uint32_t hce = ufs_rd(REG_HCE), hcs = ufs_rd(REG_HCS);
  	if (!(hce & 1) || !(hcs & HCS_DP) || !(hcs & HCS_UTRLRDY)) {
--		printf("NABU UFS: host not ready (hce 0x%x hcs 0x%x)\n", hce, hcs);
-+		printf("NABU UFS: host not ready (hce 0x%x hcs 0x%x)\n", hce, hcs);
+-		printf("CEPHEUS UFS: host not ready (hce 0x%x hcs 0x%x)\n", hce, hcs);
++		printf("CEPHEUS UFS: host not ready (hce 0x%x hcs 0x%x)\n", hce, hcs);
  		return ENXIO;
  	}
  	if (ufs_rd(REG_UTRLDBR)) {
--		printf("NABU UFS: requests outstanding from the bootloader\n");
-+		printf("NABU UFS: requests outstanding from the bootloader\n");
+-		printf("CEPHEUS UFS: requests outstanding from the bootloader\n");
++		printf("CEPHEUS UFS: requests outstanding from the bootloader\n");
  		return EBUSY;
  	}
  	/* With RAM above 4 GiB (mkadt.py --highmem) the DMA memory can be there too. */
  	if (((su.dma_pa + DMA_SIZE - 1) >> 32) && !(ufs_rd(REG_CAP) & CAP_64AS)) {
--		printf("NABU UFS: DMA memory at 0x%llx but the host has no 64-bit addressing\n",
-+		printf("NABU UFS: DMA memory at 0x%llx but the host has no 64-bit addressing\n",
+-		printf("CEPHEUS UFS: DMA memory at 0x%llx but the host has no 64-bit addressing\n",
++		printf("CEPHEUS UFS: DMA memory at 0x%llx but the host has no 64-bit addressing\n",
  		    su.dma_pa);
  		return ENXIO;
  	}
@@ -762,25 +762,25 @@ diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
  	/* Never ring a doorbell unless the host uses our list. */
  	if (ufs_rd(REG_UTRLBA) != (uint32_t)list || ufs_rd(REG_UTRLBAU) != (uint32_t)(list >> 32) ||
  	    !(ufs_rd(REG_UTRLRSR) & 1)) {
--		printf("NABU UFS: host did not take our request list\n");
-+		printf("NABU UFS: host did not take our request list\n");
+-		printf("CEPHEUS UFS: host did not take our request list\n");
++		printf("CEPHEUS UFS: host did not take our request list\n");
  		return EIO;
  	}
  	return 0;
 @@ -587,6 +587,7 @@
- nabu_ufs_init(void)
+ cepheus_ufs_init(void)
  {
  	DTEntry node;
-+	printf("NABU UFS: init entry\n");
++	printf("CEPHEUS UFS: init entry\n");
  	uintptr_t const *reg = NULL;
  	unsigned int size = 0;
  	char want[64] = "userdata";
 @@ -595,7 +596,7 @@
- 	if (SecureDTLookupEntry(NULL, "/nabu-ufs", &node) != kSuccess ||
+ 	if (SecureDTLookupEntry(NULL, "/cepheus-ufs", &node) != kSuccess ||
  	    SecureDTGetProperty(node, "reg", (void const **)&reg, &size) != kSuccess ||
  	    size < 2 * sizeof(uintptr_t)) {
--		printf("NABU UFS: no /nabu-ufs node in the device tree\n");
-+		printf("NABU UFS: no /nabu-ufs node in the device tree\n");
+-		printf("CEPHEUS UFS: no /cepheus-ufs node in the device tree\n");
++		printf("CEPHEUS UFS: no /cepheus-ufs node in the device tree\n");
  		return ENXIO;
  	}
  	PE_parse_boot_argn("ufsroot", want, sizeof(want));
@@ -788,8 +788,8 @@ diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
  	su.regs = ml_io_map(reg[0], reg[1]);
  	if (kmem_alloc_contig(kernel_map, &su.dma, DMA_SIZE, PAGE_MASK, 0, 0,
  	    KMA_DATA | KMA_ZERO | KMA_PERMANENT, VM_KERN_MEMORY_IOKIT) != KERN_SUCCESS) {
--		printf("NABU UFS: no contiguous DMA memory\n");
-+		printf("NABU UFS: no contiguous DMA memory\n");
+-		printf("CEPHEUS UFS: no contiguous DMA memory\n");
++		printf("CEPHEUS UFS: no contiguous DMA memory\n");
  		return ENOMEM;
  	}
  	ppnum_t pn = pmap_find_phys(kernel_pmap, (addr64_t)su.dma);
@@ -797,20 +797,20 @@ diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
  	/* Only now, with the partition bounds known, can writes be allowed. */
  	su.writable = (rw != 0);
  	su.ready = true;
--	printf("NABU UFS: \"%s\" on LUN %u: first block 0x%llx, %llu MiB, %s, DMA at 0x%llx\n",
-+	printf("NABU UFS: \"%s\" on LUN %u: first block 0x%llx, %llu MiB, %s, DMA at 0x%llx\n",
+-	printf("CEPHEUS UFS: \"%s\" on LUN %u: first block 0x%llx, %llu MiB, %s, DMA at 0x%llx\n",
++	printf("CEPHEUS UFS: \"%s\" on LUN %u: first block 0x%llx, %llu MiB, %s, DMA at 0x%llx\n",
  	    want, su.lun, su.first_block, su.nblocks * UFS_BLOCK >> 20,
  	    su.writable ? "read-write" : "read-only", su.dma_pa);
- 	nabu_log_start();
- 	nabu_sample_start();
+ 	cepheus_log_start();
+ 	cepheus_sample_start();
 -	/* Input drivers (HID services in iokit/Kernel/arm/hid/NabuHID.cpp). */
 +	/* Input drivers (HID services in iokit/Kernel/arm/hid/NabuHID.cpp).
-+	 * SM7150 register maps only; NABU needs its own PM8150/GENI/MTU3
++	 * SM7150 register maps only; CEPHEUS needs its own PM8150/GENI/MTU3
 +	 * bring-up, so leave them out of the console milestone. */
-+#if defined(ARM64_BOARD_CONFIG_NABU)
- 	nabu_keys_init();
- 	nabu_touch_init();
- 	nabu_usb_probe();
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ 	cepheus_keys_init();
+ 	cepheus_touch_init();
+ 	cepheus_usb_probe();
 +#endif
  	return 0;
  }
@@ -819,17 +819,17 @@ diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
  	uint64_t flushed = 0, seq = 0;
  	void *bounce = (void *)(su.dma + DMA_BOUNCE);
  
--	printf("NABU LOG: console log to the last %u KiB of the partition (block 0x%llx)\n",
-+	printf("NABU LOG: console log to the last %u KiB of the partition (block 0x%llx)\n",
- 	    NABU_LOG_BLOCKS * UFS_BLOCK >> 10, base);
+-	printf("CEPHEUS LOG: console log to the last %u KiB of the partition (block 0x%llx)\n",
++	printf("CEPHEUS LOG: console log to the last %u KiB of the partition (block 0x%llx)\n",
+ 	    CEPHEUS_LOG_BLOCKS * UFS_BLOCK >> 10, base);
  	for (;;) {
- 		(void)tsleep(&nabu_log_chan, PZERO, "nabulog", hz * (int)nabu_log_secs);
+ 		(void)tsleep(&cepheus_log_chan, PZERO, "cepheuslog", hz * (int)cepheus_log_secs);
 @@ -779,7 +784,7 @@
  		}
- 		lck_mtx_unlock(&nabu_ufs_lock);
+ 		lck_mtx_unlock(&cepheus_ufs_lock);
  		if (error) {
--			printf("NABU LOG: write failed (%d), stopping\n", error);
-+			printf("NABU LOG: write failed (%d), stopping\n", error);
+-			printf("CEPHEUS LOG: write failed (%d), stopping\n", error);
++			printf("CEPHEUS LOG: write failed (%d), stopping\n", error);
  			return;
  		}
  		flushed = total;
@@ -837,8 +837,8 @@ diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
  	*dev = su.bdev;
  	return 0;
  }
--#endif /* ARM64_BOARD_CONFIG_NABU */
-+#endif /* ARM64_BOARD_CONFIG_NABU || ARM64_BOARD_CONFIG_NABU */
+-#endif /* ARM64_BOARD_CONFIG_CEPHEUS */
++#endif /* ARM64_BOARD_CONFIG_CEPHEUS || ARM64_BOARD_CONFIG_CEPHEUS */
 diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
 --- a/bsd/kern/bsd_init.c
 +++ b/bsd/kern/bsd_init.c
@@ -846,7 +846,7 @@ diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
  void
  bsd_init(void)
  {
-+	printf("NABU BSD: bsd_init enter\n");
++	printf("CEPHEUS BSD: bsd_init enter\n");
  	struct uthread *ut;
  	vnode_t init_rootvnode = NULLVP;
  	struct proc_ro_data kernproc_ro_data = {
@@ -855,9 +855,9 @@ diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
  	bsd_init_kprintf("calling nwk_wq_init\n");
  	nwk_wq_init();
 -	bsd_init_kprintf("calling dlil_init\n");
-+	printf("NABU BSD: before dlil_init\n");
++	printf("CEPHEUS BSD: before dlil_init\n");
  	dlil_init();
-+	printf("NABU BSD: after dlil_init\n");
++	printf("CEPHEUS BSD: after dlil_init\n");
  #endif /* NETWORKING */
  #if SOCKETS
  	bsd_init_kprintf("calling socketinit\n");
@@ -866,9 +866,9 @@ diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
  	sysctl_mib_init();
  
 -	bsd_init_kprintf("calling bsd_autoconf\n");
-+	printf("NABU BSD: before bsd_autoconf\n");
++	printf("CEPHEUS BSD: before bsd_autoconf\n");
  	bsd_autoconf();
-+	printf("NABU BSD: after bsd_autoconf\n");
++	printf("CEPHEUS BSD: after bsd_autoconf\n");
  
  #if CONFIG_DTRACE
  	dtrace_postinit();
@@ -876,8 +876,8 @@ diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
  			 * cannot be a sealed volume. Report it instead of panicking.
  			 */
  			if (autherr) {
--				printf("NABU: root volume is not authenticated (error %d); continuing unsealed\n", autherr);
-+				printf("NABU: root volume is not authenticated (error %d); continuing unsealed\n", autherr);
+-				printf("CEPHEUS: root volume is not authenticated (error %d); continuing unsealed\n", autherr);
++				printf("CEPHEUS: root volume is not authenticated (error %d); continuing unsealed\n", autherr);
  			}
  #else
  			if (autherr) {
@@ -885,7 +885,7 @@ diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
  {
  	kprintf("bsd_autoconf: calling kminit\n");
  	kminit();
-+	printf("NABU BSD: after kminit\n");
++	printf("CEPHEUS BSD: after kminit\n");
  
  	/*
  	 * Early startup for bsd pseudodevices.
@@ -894,9 +894,9 @@ diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
  	}
  
 -	return IOKitBSDInit();
-+	printf("NABU BSD: before IOKitBSDInit\n");
++	printf("CEPHEUS BSD: before IOKitBSDInit\n");
 +	kern_return_t kr = IOKitBSDInit();
-+	printf("NABU BSD: after IOKitBSDInit kr=%d\n", kr);
++	printf("CEPHEUS BSD: after IOKitBSDInit kr=%d\n", kr);
 +	return kr;
  }
  
@@ -905,61 +905,61 @@ diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
  	u_int32_t       flags;
  	kern_return_t   err;
  
-+	printf("NABU: setconf before IOFindBSDRoot\n");
++	printf("CEPHEUS: setconf before IOFindBSDRoot\n");
  	err = IOFindBSDRoot(rootdevice, sizeof(rootdevice), &rootdev, &flags);
-+	printf("NABU: setconf after IOFindBSDRoot err=%d root=%s\n", err, rootdevice);
++	printf("CEPHEUS: setconf after IOFindBSDRoot err=%d root=%s\n", err, rootdevice);
  	if (err) {
  		printf("setconf: IOFindBSDRoot returned an error (%d);"
  		    "setting rootdevice to 'sd0a'.\n", err);     /* XXX DEBUG TEMP */
-diff --git a/bsd/pthread/nabu_pthread_init.c b/bsd/pthread/nabu_pthread_init.c
---- a/bsd/pthread/nabu_pthread_init.c
-+++ b/bsd/pthread/nabu_pthread_init.c
+diff --git a/bsd/pthread/cepheus_pthread_init.c b/bsd/pthread/cepheus_pthread_init.c
+--- a/bsd/pthread/cepheus_pthread_init.c
++++ b/bsd/pthread/cepheus_pthread_init.c
 @@ -1,5 +1,5 @@
  /* Built-in provider: Apple libpthread-514.100.2, paired with xnu-8796.141.3. */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- #include "nabu_pthread_compat.h"
- #include "nabu_libpthread/kern/kern_init.c"
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ #include "cepheus_pthread_compat.h"
+ #include "cepheus_libpthread/kern/kern_init.c"
  
 @@ -18,9 +18,9 @@
  {
-     kern_return_t kr = nabu_pthread_start(NULL, NULL);
-     if (kr != KERN_SUCCESS || nabu_pthread_kern == NULL) {
--        panic("NABU: pthread provider registration failed: %d", kr);
-+        panic("NABU: pthread provider registration failed: %d", kr);
+     kern_return_t kr = cepheus_pthread_start(NULL, NULL);
+     if (kr != KERN_SUCCESS || cepheus_pthread_kern == NULL) {
+-        panic("CEPHEUS: pthread provider registration failed: %d", kr);
++        panic("CEPHEUS: pthread provider registration failed: %d", kr);
      }
--    kprintf("NABU pthread: libpthread-514.100.2 registered\n");
-+    kprintf("NABU pthread: libpthread-514.100.2 registered\n");
+-    kprintf("CEPHEUS pthread: libpthread-514.100.2 registered\n");
++    kprintf("CEPHEUS pthread: libpthread-514.100.2 registered\n");
  }
- STARTUP(EARLY_BOOT, STARTUP_RANK_SECOND, nabu_pthread_register);
- #endif /* ARM64_BOARD_CONFIG_NABU */
-diff --git a/bsd/pthread/nabu_pthread_support.c b/bsd/pthread/nabu_pthread_support.c
---- a/bsd/pthread/nabu_pthread_support.c
-+++ b/bsd/pthread/nabu_pthread_support.c
+ STARTUP(EARLY_BOOT, STARTUP_RANK_SECOND, cepheus_pthread_register);
+ #endif /* ARM64_BOARD_CONFIG_CEPHEUS */
+diff --git a/bsd/pthread/cepheus_pthread_support.c b/bsd/pthread/cepheus_pthread_support.c
+--- a/bsd/pthread/cepheus_pthread_support.c
++++ b/bsd/pthread/cepheus_pthread_support.c
 @@ -1,5 +1,5 @@
  /* Built-in provider: Apple libpthread-514.100.2, paired with xnu-8796.141.3. */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- #include "nabu_pthread_compat.h"
- #include "nabu_libpthread/kern/kern_support.c"
- #endif /* ARM64_BOARD_CONFIG_NABU */
-diff --git a/bsd/pthread/nabu_pthread_synch.c b/bsd/pthread/nabu_pthread_synch.c
---- a/bsd/pthread/nabu_pthread_synch.c
-+++ b/bsd/pthread/nabu_pthread_synch.c
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ #include "cepheus_pthread_compat.h"
+ #include "cepheus_libpthread/kern/kern_support.c"
+ #endif /* ARM64_BOARD_CONFIG_CEPHEUS */
+diff --git a/bsd/pthread/cepheus_pthread_synch.c b/bsd/pthread/cepheus_pthread_synch.c
+--- a/bsd/pthread/cepheus_pthread_synch.c
++++ b/bsd/pthread/cepheus_pthread_synch.c
 @@ -1,5 +1,5 @@
  /* Built-in provider: Apple libpthread-514.100.2, paired with xnu-8796.141.3. */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- #include "nabu_pthread_compat.h"
- #include "nabu_libpthread/kern/kern_synch.c"
- #endif /* ARM64_BOARD_CONFIG_NABU */
-diff --git a/config/MASTER.arm64.nabu b/config/MASTER.arm64.nabu
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ #include "cepheus_pthread_compat.h"
+ #include "cepheus_libpthread/kern/kern_synch.c"
+ #endif /* ARM64_BOARD_CONFIG_CEPHEUS */
+diff --git a/config/MASTER.arm64.cepheus b/config/MASTER.arm64.cepheus
 new file mode 100644
 --- /dev/null
-+++ b/config/MASTER.arm64.nabu
++++ b/config/MASTER.arm64.cepheus
 @@ -0,0 +1,116 @@
 +#
-+# nabu (Xiaomi Pad 5, SM8150): copy of the nabu master config.
++# cepheus (Xiaomi Pad 5, SM8150): copy of the cepheus master config.
 +# MASTER.arm64.MacOSX plus the open-source arm64 assembly and pmap
 +# (nos_arm_asm, nos_arm_pmap). Apple's own SoC configs link those from the
 +# KDK's closed lib<SOC>.os.<CONFIG>.a instead, which is arm64e and
@@ -1081,8 +1081,8 @@ diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
  	bool                wasHiding;
  
  	iomediaClass = OSMetaClass::getMetaClassWithName(gIOMediaKey);
--#if !defined(ARM64_BOARD_CONFIG_NABU)
-+#if !defined(ARM64_BOARD_CONFIG_NABU) && !defined(ARM64_BOARD_CONFIG_NABU)
+-#if !defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if !defined(ARM64_BOARD_CONFIG_CEPHEUS) && !defined(ARM64_BOARD_CONFIG_CEPHEUS)
  	assert(iomediaClass);
  #endif
  
@@ -1090,10 +1090,10 @@ diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
  	}
  	UNLOCKNOTIFY();
  
--#if defined(ARM64_BOARD_CONFIG_NABU)
--	/* NABU has no IOStorageFamily: without the IOMedia class no media exists to unhide. */
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
-+	/* NABU/NABU have no IOStorageFamily: without IOMedia no media exists to unhide. */
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
+-	/* CEPHEUS has no IOStorageFamily: without the IOMedia class no media exists to unhide. */
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
++	/* CEPHEUS/CEPHEUS have no IOStorageFamily: without IOMedia no media exists to unhide. */
  	if (!iomediaClass) {
  		wasHiding = false;
  	}
@@ -1101,12 +1101,12 @@ diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
  	bool unhide;
  
  	ioblockstoragedriverClass = OSMetaClass::getMetaClassWithName(gIOBlockStorageDriverKey);
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
  	/*
--	 * NABU has no IOStorageFamily, so no service can be a block storage
+-	 * CEPHEUS has no IOStorageFamily, so no service can be a block storage
 -	 * driver: the root (e.g. a RAM disk) is not block media, as for image boot.
-+	 * NABU/NABU have no IOStorageFamily, so no service can be a block
++	 * CEPHEUS/CEPHEUS have no IOStorageFamily, so no service can be a block
 +	 * storage driver: the root (e.g. a RAM disk or the BSD-only UFS device)
 +	 * is not block media, as for image boot.
  	 */
@@ -1119,17 +1119,17 @@ diff --git a/iokit/KernelConfigTables.cpp b/iokit/KernelConfigTables.cpp
  
  const char * gIOKernelConfigTables =
      "("
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
      "   {"
      "     'IOClass'         = NabuPlatformExpert;"
      "     'IOProviderClass' = IOPlatformExpertDevice;"
--    "     'IONameMatch'     = 'xiaomi,nabu';"
+-    "     'IONameMatch'     = 'xiaomi,cepheus';"
 +    "     'IONameMatch'     = '"
-+#if defined(ARM64_BOARD_CONFIG_NABU)
-+    "xiaomi,nabu"
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++    "xiaomi,cepheus"
 +#else
-+    "xiaomi,nabu"
++    "xiaomi,cepheus"
 +#endif
 +    "';"
      "     'IOProbeScore'    = 10000:32;"
@@ -1139,7 +1139,7 @@ diff --git a/iokit/KernelConfigTables.cpp b/iokit/KernelConfigTables.cpp
      "     'IOProviderClass' = IOPlatformDevice;"
 -    "     'IONameMatch'     = 'qcom,kryo470';"
 +    "     'IONameMatch'     = '"
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +    "qcom,kryo485"
 +#else
 +    "qcom,kryo470"
@@ -1147,7 +1147,7 @@ diff --git a/iokit/KernelConfigTables.cpp b/iokit/KernelConfigTables.cpp
 +    "';"
      "     'IOProbeScore'    = 10000:32;"
      "   },"
-+#if !defined(ARM64_BOARD_CONFIG_NABU)
++#if !defined(ARM64_BOARD_CONFIG_CEPHEUS)
      "   {"
      "     'IOClass'         = AppleKeyStore;"
      "     'IOProviderClass' = IOResources;"
@@ -1164,21 +1164,21 @@ diff --git a/iokit/bsddev/IOKitBSDInit.cpp b/iokit/bsddev/IOKitBSDInit.cpp
  		}
  	}
  
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
  //
--//	NABU: root on a GPT partition of the internal UFS (bsd/dev/nabu_ufs.c)
-+//	NABU/NABU: root on a GPT partition of the internal UFS
-+//	(bsd/dev/nabu_ufs.c)
+-//	CEPHEUS: root on a GPT partition of the internal UFS (bsd/dev/cepheus_ufs.c)
++//	CEPHEUS/CEPHEUS: root on a GPT partition of the internal UFS
++//	(bsd/dev/cepheus_ufs.c)
  //
  	if (strcmp(rdBootVar, "ufsroot0") == 0) {
- 		extern int nabu_ufs_rootdev(dev_t *dev);
-+		IOLog("NABU: IOFindBSDRoot UFS branch, calling nabu_ufs_rootdev\n");
+ 		extern int cepheus_ufs_rootdev(dev_t *dev);
++		IOLog("CEPHEUS: IOFindBSDRoot UFS branch, calling cepheus_ufs_rootdev\n");
  		OSSafeReleaseNULL(matching);
- 		int ufs_error = nabu_ufs_rootdev(root);
-+		IOLog("NABU: nabu_ufs_rootdev returned %d\n", ufs_error);
+ 		int ufs_error = cepheus_ufs_rootdev(root);
++		IOLog("CEPHEUS: cepheus_ufs_rootdev returned %d\n", ufs_error);
  		if (ufs_error) {
- 			panic("IOFindBSDRoot: NABU UFS root %s unavailable: %d", rdBootVar, ufs_error);
+ 			panic("IOFindBSDRoot: CEPHEUS UFS root %s unavailable: %d", rdBootVar, ufs_error);
  		}
 diff --git a/libkern/conf/Makefile.template b/libkern/conf/Makefile.template
 --- a/libkern/conf/Makefile.template
@@ -1187,11 +1187,11 @@ diff --git a/libkern/conf/Makefile.template b/libkern/conf/Makefile.template
  CFLAGS+= -include meta_features.h -DLIBKERN_KERNEL_PRIVATE -DOSALLOCDEBUG=1
  SFLAGS+= -include meta_features.h
  
--ifeq ($(CURRENT_MACHINE_CONFIG),NABU)
-+ifneq ($(filter $(CURRENT_MACHINE_CONFIG),NABU NABU),)
- NABU_AES_ROOT = $(SRCROOT)/libkern/crypto/nabu_bearssl
- NABU_AES_INC = -I$(NABU_AES_ROOT)/inc -I$(NABU_AES_ROOT)/src
- nabu_aes.o_INCFLAGS = $(NABU_AES_INC)
+-ifeq ($(CURRENT_MACHINE_CONFIG),CEPHEUS)
++ifneq ($(filter $(CURRENT_MACHINE_CONFIG),CEPHEUS CEPHEUS),)
+ CEPHEUS_AES_ROOT = $(SRCROOT)/libkern/crypto/cepheus_bearssl
+ CEPHEUS_AES_INC = -I$(CEPHEUS_AES_ROOT)/inc -I$(CEPHEUS_AES_ROOT)/src
+ cepheus_aes.o_INCFLAGS = $(CEPHEUS_AES_INC)
 diff --git a/libkern/crypto/corecrypto_aes.c b/libkern/crypto/corecrypto_aes.c
 --- a/libkern/crypto/corecrypto_aes.c
 +++ b/libkern/crypto/corecrypto_aes.c
@@ -1199,11 +1199,11 @@ diff --git a/libkern/crypto/corecrypto_aes.c b/libkern/crypto/corecrypto_aes.c
  #include <corecrypto/ccaes.h>
  #include <kern/debug.h>
  
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- /* NABU has a built-in portable AES provider for the legacy CBC/ECB API. */
- extern const struct ccmode_cbc nabu_aes_cbc_encrypt;
- extern const struct ccmode_cbc nabu_aes_cbc_decrypt;
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ /* CEPHEUS has a built-in portable AES provider for the legacy CBC/ECB API. */
+ extern const struct ccmode_cbc cepheus_aes_cbc_encrypt;
+ extern const struct ccmode_cbc cepheus_aes_cbc_decrypt;
 diff --git a/libkern/crypto/corecrypto_md5.c b/libkern/crypto/corecrypto_md5.c
 --- a/libkern/crypto/corecrypto_md5.c
 +++ b/libkern/crypto/corecrypto_md5.c
@@ -1211,17 +1211,17 @@ diff --git a/libkern/crypto/corecrypto_md5.c b/libkern/crypto/corecrypto_md5.c
  }
  
  /* Copy a ccdigest ctx into a legacy MD5 context */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
  /*
-  * NABU has no corecrypto kext (g_crypto_funcs stays NULL). MD5 uses
-  * BearSSL's portable implementation (libkern/crypto/nabu_md5.c), with
+  * CEPHEUS has no corecrypto kext (g_crypto_funcs stays NULL). MD5 uses
+  * BearSSL's portable implementation (libkern/crypto/cepheus_md5.c), with
 @@ -71,7 +71,7 @@
  	br_md5_out(&br_ctx, digest);
  }
  
--#else /* !ARM64_BOARD_CONFIG_NABU */
-+#else /* !ARM64_BOARD_CONFIG_NABU || defined(ARM64_BOARD_CONFIG_NABU) */
+-#else /* !ARM64_BOARD_CONFIG_CEPHEUS */
++#else /* !ARM64_BOARD_CONFIG_CEPHEUS || defined(ARM64_BOARD_CONFIG_CEPHEUS) */
  
  static void
  DiToMD5(const struct ccdigest_info *di, struct ccdigest_ctx *di_ctx, MD5_CTX *md5_ctx)
@@ -1229,8 +1229,8 @@ diff --git a/libkern/crypto/corecrypto_md5.c b/libkern/crypto/corecrypto_md5.c
  	ccdigest_final(di, di_ctx, digest);
  }
  
--#endif /* !ARM64_BOARD_CONFIG_NABU */
-+#endif /* !ARM64_BOARD_CONFIG_NABU || defined(ARM64_BOARD_CONFIG_NABU) */
+-#endif /* !ARM64_BOARD_CONFIG_CEPHEUS */
++#endif /* !ARM64_BOARD_CONFIG_CEPHEUS || defined(ARM64_BOARD_CONFIG_CEPHEUS) */
 diff --git a/libkern/crypto/corecrypto_sha1.c b/libkern/crypto/corecrypto_sha1.c
 --- a/libkern/crypto/corecrypto_sha1.c
 +++ b/libkern/crypto/corecrypto_sha1.c
@@ -1238,17 +1238,17 @@ diff --git a/libkern/crypto/corecrypto_sha1.c b/libkern/crypto/corecrypto_sha1.c
  	ctx->c.b64[0] = count;
  }
  
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
  /*
-  * NABU has no corecrypto kext (g_crypto_funcs stays NULL). SHA-1 uses
-  * BearSSL's portable implementation (libkern/crypto/nabu_sha1.c), with
+  * CEPHEUS has no corecrypto kext (g_crypto_funcs stays NULL). SHA-1 uses
+  * BearSSL's portable implementation (libkern/crypto/cepheus_sha1.c), with
 @@ -70,7 +70,7 @@
  	br_sha1_out(&br_ctx, digest);
  }
  
--#else /* !ARM64_BOARD_CONFIG_NABU */
-+#else /* !ARM64_BOARD_CONFIG_NABU || defined(ARM64_BOARD_CONFIG_NABU) */
+-#else /* !ARM64_BOARD_CONFIG_CEPHEUS */
++#else /* !ARM64_BOARD_CONFIG_CEPHEUS || defined(ARM64_BOARD_CONFIG_CEPHEUS) */
  
  /* Copy a ccdigest ctx into a legacy SHA1 context */
  static void
@@ -1256,8 +1256,8 @@ diff --git a/libkern/crypto/corecrypto_sha1.c b/libkern/crypto/corecrypto_sha1.c
  	ccdigest_final(di, di_ctx, digest);
  }
  
--#endif /* !ARM64_BOARD_CONFIG_NABU */
-+#endif /* !ARM64_BOARD_CONFIG_NABU || defined(ARM64_BOARD_CONFIG_NABU) */
+-#endif /* !ARM64_BOARD_CONFIG_CEPHEUS */
++#endif /* !ARM64_BOARD_CONFIG_CEPHEUS || defined(ARM64_BOARD_CONFIG_CEPHEUS) */
  
  /* This is not publicised in header, but exported in libkern.exports */
  void SHA1Final_r(SHA1_CTX *context, void *digest);
@@ -1268,26 +1268,26 @@ diff --git a/libkern/crypto/corecrypto_sha2.c b/libkern/crypto/corecrypto_sha2.c
  
  #if defined(CRYPTO_SHA2)
  
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
  /*
-  * NABU has no corecrypto kext, so g_crypto_funcs stays NULL. SHA-256 uses
-  * XNU's built-in implementation directly, as the NABU PRNG does; this also
+  * CEPHEUS has no corecrypto kext, so g_crypto_funcs stays NULL. SHA-256 uses
+  * XNU's built-in implementation directly, as the CEPHEUS PRNG does; this also
 @@ -84,7 +84,7 @@
  	ccdigest_final(di, ctx->ctx, digest);
  }
  
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- #include "nabu_bearssl/inc/bearssl_hash.h"
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ #include "cepheus_bearssl/inc/bearssl_hash.h"
  
  _Static_assert(sizeof(br_sha384_context) <= sizeof(SHA512_CTX),
 @@ -127,7 +127,7 @@
  	br_sha512_out(BR_CTX(ctx), digest);
  }
  
--#else /* !ARM64_BOARD_CONFIG_NABU */
-+#else /* !ARM64_BOARD_CONFIG_NABU || defined(ARM64_BOARD_CONFIG_NABU) */
+-#else /* !ARM64_BOARD_CONFIG_CEPHEUS */
++#else /* !ARM64_BOARD_CONFIG_CEPHEUS || defined(ARM64_BOARD_CONFIG_CEPHEUS) */
  
  void
  SHA384_Init(SHA384_CTX *ctx)
@@ -1295,154 +1295,154 @@ diff --git a/libkern/crypto/corecrypto_sha2.c b/libkern/crypto/corecrypto_sha2.c
  	ccdigest_final(di, ctx->ctx, digest);
  }
  
--#endif /* !ARM64_BOARD_CONFIG_NABU */
-+#endif /* !ARM64_BOARD_CONFIG_NABU || defined(ARM64_BOARD_CONFIG_NABU) */
+-#endif /* !ARM64_BOARD_CONFIG_CEPHEUS */
++#endif /* !ARM64_BOARD_CONFIG_CEPHEUS || defined(ARM64_BOARD_CONFIG_CEPHEUS) */
  
  #else
  
-diff --git a/libkern/crypto/nabu_aes.c b/libkern/crypto/nabu_aes.c
---- a/libkern/crypto/nabu_aes.c
-+++ b/libkern/crypto/nabu_aes.c
+diff --git a/libkern/crypto/cepheus_aes.c b/libkern/crypto/cepheus_aes.c
+--- a/libkern/crypto/cepheus_aes.c
++++ b/libkern/crypto/cepheus_aes.c
 @@ -4,7 +4,7 @@
   * No heap, SIMD or CPU crypto extension is needed. Contexts can be copied:
   * their only pointer is the immutable BearSSL class descriptor.
   */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
  #include <libkern/libkern.h>
  #include <libkern/crypto/aes.h>
  #include <corecrypto/ccmode.h>
 @@ -108,4 +108,4 @@
-     .init = nabu_aes_decrypt_init,
-     .cbc = nabu_aes_decrypt_cbc,
+     .init = cepheus_aes_decrypt_init,
+     .cbc = cepheus_aes_decrypt_cbc,
  };
--#endif /* ARM64_BOARD_CONFIG_NABU */
-+#endif /* ARM64_BOARD_CONFIG_NABU || defined(ARM64_BOARD_CONFIG_NABU) */
-diff --git a/libkern/crypto/nabu_aes_ct.c b/libkern/crypto/nabu_aes_ct.c
---- a/libkern/crypto/nabu_aes_ct.c
-+++ b/libkern/crypto/nabu_aes_ct.c
+-#endif /* ARM64_BOARD_CONFIG_CEPHEUS */
++#endif /* ARM64_BOARD_CONFIG_CEPHEUS || defined(ARM64_BOARD_CONFIG_CEPHEUS) */
+diff --git a/libkern/crypto/cepheus_aes_ct.c b/libkern/crypto/cepheus_aes_ct.c
+--- a/libkern/crypto/cepheus_aes_ct.c
++++ b/libkern/crypto/cepheus_aes_ct.c
 @@ -1,4 +1,4 @@
  /* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- #include "nabu_bearssl/src/symcipher/aes_ct.c"
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ #include "cepheus_bearssl/src/symcipher/aes_ct.c"
  #endif
-diff --git a/libkern/crypto/nabu_aes_ct_cbcdec.c b/libkern/crypto/nabu_aes_ct_cbcdec.c
---- a/libkern/crypto/nabu_aes_ct_cbcdec.c
-+++ b/libkern/crypto/nabu_aes_ct_cbcdec.c
+diff --git a/libkern/crypto/cepheus_aes_ct_cbcdec.c b/libkern/crypto/cepheus_aes_ct_cbcdec.c
+--- a/libkern/crypto/cepheus_aes_ct_cbcdec.c
++++ b/libkern/crypto/cepheus_aes_ct_cbcdec.c
 @@ -1,4 +1,4 @@
  /* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- #include "nabu_bearssl/src/symcipher/aes_ct_cbcdec.c"
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ #include "cepheus_bearssl/src/symcipher/aes_ct_cbcdec.c"
  #endif
-diff --git a/libkern/crypto/nabu_aes_ct_cbcenc.c b/libkern/crypto/nabu_aes_ct_cbcenc.c
---- a/libkern/crypto/nabu_aes_ct_cbcenc.c
-+++ b/libkern/crypto/nabu_aes_ct_cbcenc.c
+diff --git a/libkern/crypto/cepheus_aes_ct_cbcenc.c b/libkern/crypto/cepheus_aes_ct_cbcenc.c
+--- a/libkern/crypto/cepheus_aes_ct_cbcenc.c
++++ b/libkern/crypto/cepheus_aes_ct_cbcenc.c
 @@ -1,4 +1,4 @@
  /* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- #include "nabu_bearssl/src/symcipher/aes_ct_cbcenc.c"
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ #include "cepheus_bearssl/src/symcipher/aes_ct_cbcenc.c"
  #endif
-diff --git a/libkern/crypto/nabu_aes_ct_dec.c b/libkern/crypto/nabu_aes_ct_dec.c
---- a/libkern/crypto/nabu_aes_ct_dec.c
-+++ b/libkern/crypto/nabu_aes_ct_dec.c
+diff --git a/libkern/crypto/cepheus_aes_ct_dec.c b/libkern/crypto/cepheus_aes_ct_dec.c
+--- a/libkern/crypto/cepheus_aes_ct_dec.c
++++ b/libkern/crypto/cepheus_aes_ct_dec.c
 @@ -1,4 +1,4 @@
  /* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- #include "nabu_bearssl/src/symcipher/aes_ct_dec.c"
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ #include "cepheus_bearssl/src/symcipher/aes_ct_dec.c"
  #endif
-diff --git a/libkern/crypto/nabu_aes_ct_enc.c b/libkern/crypto/nabu_aes_ct_enc.c
---- a/libkern/crypto/nabu_aes_ct_enc.c
-+++ b/libkern/crypto/nabu_aes_ct_enc.c
+diff --git a/libkern/crypto/cepheus_aes_ct_enc.c b/libkern/crypto/cepheus_aes_ct_enc.c
+--- a/libkern/crypto/cepheus_aes_ct_enc.c
++++ b/libkern/crypto/cepheus_aes_ct_enc.c
 @@ -1,4 +1,4 @@
  /* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- #include "nabu_bearssl/src/symcipher/aes_ct_enc.c"
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ #include "cepheus_bearssl/src/symcipher/aes_ct_enc.c"
  #endif
-diff --git a/libkern/crypto/nabu_dec32be.c b/libkern/crypto/nabu_dec32be.c
---- a/libkern/crypto/nabu_dec32be.c
-+++ b/libkern/crypto/nabu_dec32be.c
+diff --git a/libkern/crypto/cepheus_dec32be.c b/libkern/crypto/cepheus_dec32be.c
+--- a/libkern/crypto/cepheus_dec32be.c
++++ b/libkern/crypto/cepheus_dec32be.c
 @@ -1,4 +1,4 @@
  /* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- #include "nabu_bearssl/src/codec/dec32be.c"
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ #include "cepheus_bearssl/src/codec/dec32be.c"
  #endif
-diff --git a/libkern/crypto/nabu_dec32le.c b/libkern/crypto/nabu_dec32le.c
---- a/libkern/crypto/nabu_dec32le.c
-+++ b/libkern/crypto/nabu_dec32le.c
+diff --git a/libkern/crypto/cepheus_dec32le.c b/libkern/crypto/cepheus_dec32le.c
+--- a/libkern/crypto/cepheus_dec32le.c
++++ b/libkern/crypto/cepheus_dec32le.c
 @@ -1,4 +1,4 @@
  /* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- #include "nabu_bearssl/src/codec/dec32le.c"
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ #include "cepheus_bearssl/src/codec/dec32le.c"
  #endif
-diff --git a/libkern/crypto/nabu_dec64be.c b/libkern/crypto/nabu_dec64be.c
---- a/libkern/crypto/nabu_dec64be.c
-+++ b/libkern/crypto/nabu_dec64be.c
+diff --git a/libkern/crypto/cepheus_dec64be.c b/libkern/crypto/cepheus_dec64be.c
+--- a/libkern/crypto/cepheus_dec64be.c
++++ b/libkern/crypto/cepheus_dec64be.c
 @@ -1,4 +1,4 @@
  /* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- #include "nabu_bearssl/src/codec/dec64be.c"
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ #include "cepheus_bearssl/src/codec/dec64be.c"
  #endif
-diff --git a/libkern/crypto/nabu_enc32be.c b/libkern/crypto/nabu_enc32be.c
---- a/libkern/crypto/nabu_enc32be.c
-+++ b/libkern/crypto/nabu_enc32be.c
+diff --git a/libkern/crypto/cepheus_enc32be.c b/libkern/crypto/cepheus_enc32be.c
+--- a/libkern/crypto/cepheus_enc32be.c
++++ b/libkern/crypto/cepheus_enc32be.c
 @@ -1,4 +1,4 @@
  /* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- #include "nabu_bearssl/src/codec/enc32be.c"
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ #include "cepheus_bearssl/src/codec/enc32be.c"
  #endif
-diff --git a/libkern/crypto/nabu_enc32le.c b/libkern/crypto/nabu_enc32le.c
---- a/libkern/crypto/nabu_enc32le.c
-+++ b/libkern/crypto/nabu_enc32le.c
+diff --git a/libkern/crypto/cepheus_enc32le.c b/libkern/crypto/cepheus_enc32le.c
+--- a/libkern/crypto/cepheus_enc32le.c
++++ b/libkern/crypto/cepheus_enc32le.c
 @@ -1,4 +1,4 @@
  /* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- #include "nabu_bearssl/src/codec/enc32le.c"
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ #include "cepheus_bearssl/src/codec/enc32le.c"
  #endif
-diff --git a/libkern/crypto/nabu_enc64be.c b/libkern/crypto/nabu_enc64be.c
---- a/libkern/crypto/nabu_enc64be.c
-+++ b/libkern/crypto/nabu_enc64be.c
+diff --git a/libkern/crypto/cepheus_enc64be.c b/libkern/crypto/cepheus_enc64be.c
+--- a/libkern/crypto/cepheus_enc64be.c
++++ b/libkern/crypto/cepheus_enc64be.c
 @@ -1,4 +1,4 @@
  /* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- #include "nabu_bearssl/src/codec/enc64be.c"
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ #include "cepheus_bearssl/src/codec/enc64be.c"
  #endif
-diff --git a/libkern/crypto/nabu_md5.c b/libkern/crypto/nabu_md5.c
---- a/libkern/crypto/nabu_md5.c
-+++ b/libkern/crypto/nabu_md5.c
+diff --git a/libkern/crypto/cepheus_md5.c b/libkern/crypto/cepheus_md5.c
+--- a/libkern/crypto/cepheus_md5.c
++++ b/libkern/crypto/cepheus_md5.c
 @@ -1,4 +1,4 @@
  /* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- #include "nabu_bearssl/src/hash/md5.c"
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ #include "cepheus_bearssl/src/hash/md5.c"
  #endif
-diff --git a/libkern/crypto/nabu_sha1.c b/libkern/crypto/nabu_sha1.c
---- a/libkern/crypto/nabu_sha1.c
-+++ b/libkern/crypto/nabu_sha1.c
+diff --git a/libkern/crypto/cepheus_sha1.c b/libkern/crypto/cepheus_sha1.c
+--- a/libkern/crypto/cepheus_sha1.c
++++ b/libkern/crypto/cepheus_sha1.c
 @@ -1,4 +1,4 @@
  /* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- #include "nabu_bearssl/src/hash/sha1.c"
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ #include "cepheus_bearssl/src/hash/sha1.c"
  #endif
-diff --git a/libkern/crypto/nabu_sha2big.c b/libkern/crypto/nabu_sha2big.c
---- a/libkern/crypto/nabu_sha2big.c
-+++ b/libkern/crypto/nabu_sha2big.c
+diff --git a/libkern/crypto/cepheus_sha2big.c b/libkern/crypto/cepheus_sha2big.c
+--- a/libkern/crypto/cepheus_sha2big.c
++++ b/libkern/crypto/cepheus_sha2big.c
 @@ -1,4 +1,4 @@
  /* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- #include "nabu_bearssl/src/hash/sha2big.c"
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ #include "cepheus_bearssl/src/hash/sha2big.c"
  #endif
 diff --git a/makedefs/MakeInc.cmd b/makedefs/MakeInc.cmd
 --- a/makedefs/MakeInc.cmd
@@ -1467,16 +1467,16 @@ diff --git a/makedefs/MakeInc.def b/makedefs/MakeInc.def
  else ifneq ($(findstring _host,$(RC_ProjectName)),)
  SUPPORTED_ARM64_MACHINE_CONFIGS = NONE
  else
--SUPPORTED_ARM64_MACHINE_CONFIGS = BCM2837 T6000 T8101 T8103 VMAPPLE NABU
-+SUPPORTED_ARM64_MACHINE_CONFIGS = BCM2837 T6000 T8101 T8103 VMAPPLE NABU NABU
+-SUPPORTED_ARM64_MACHINE_CONFIGS = BCM2837 T6000 T8101 T8103 VMAPPLE CEPHEUS
++SUPPORTED_ARM64_MACHINE_CONFIGS = BCM2837 T6000 T8101 T8103 VMAPPLE CEPHEUS CEPHEUS
  
  endif
  
 @@ -62,6 +62,7 @@
  MACHINE_FLAGS_ARM64_VMAPPLE = -DARM64_BOARD_CONFIG_VMAPPLE              -march=armv8.5a
  MACHINE_FLAGS_ARM64_BCM2837 = -DARM64_BOARD_CONFIG_BCM2837
- MACHINE_FLAGS_ARM64_NABU = -DARM64_BOARD_CONFIG_NABU                -march=armv8.2-a+crypto
-+MACHINE_FLAGS_ARM64_NABU = -DARM64_BOARD_CONFIG_NABU                  -march=armv8.2-a+crypto
+ MACHINE_FLAGS_ARM64_CEPHEUS = -DARM64_BOARD_CONFIG_CEPHEUS                -march=armv8.2-a+crypto
++MACHINE_FLAGS_ARM64_CEPHEUS = -DARM64_BOARD_CONFIG_CEPHEUS                  -march=armv8.2-a+crypto
  
  
  #
@@ -1484,10 +1484,10 @@ diff --git a/makedefs/MakeInc.def b/makedefs/MakeInc.def
  # Without embdedded device map, use a default arch string
  export ARCH_STRING_FOR_CURRENT_MACHINE_CONFIG := $(shell echo $(CURRENT_ARCH_CONFIG) | tr A-Z a-z)
  ifneq ($(filter arm64,$(ARCH_STRING_FOR_CURRENT_MACHINE_CONFIG)),)
--# nabu's Cortex-A76/A55 have no pointer authentication: stay plain arm64
--ifneq ($(CURRENT_MACHINE_CONFIG),NABU)
-+# nabu/nabu Cortex-A76/A55 have no pointer authentication: stay plain arm64
-+ifneq ($(filter $(CURRENT_MACHINE_CONFIG),NABU NABU),)
+-# cepheus's Cortex-A76/A55 have no pointer authentication: stay plain arm64
+-ifneq ($(CURRENT_MACHINE_CONFIG),CEPHEUS)
++# cepheus/cepheus Cortex-A76/A55 have no pointer authentication: stay plain arm64
++ifneq ($(filter $(CURRENT_MACHINE_CONFIG),CEPHEUS CEPHEUS),)
 +else
  export ARCH_STRING_FOR_CURRENT_MACHINE_CONFIG := arm64e
  endif
@@ -1515,7 +1515,7 @@ diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
 +++ b/osfmk/arm64/start.s
 @@ -515,10 +515,10 @@
  
- #if defined(NABU)
+ #if defined(CEPHEUS)
  	/* Stage 0: white 64x32 band, no stack or page tables needed. */
 -	MOV64	x0, (0x9c000000 + 2368 * 4320)
 +	MOV64	x0, (0x9c000000 + 2528 * 6400)
@@ -1523,12 +1523,12 @@ diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
  	mov		x2, #32
 -	mov		x4, #4320
 +	mov		x4, #6400
- Lnabu_mark_row:
+ Lcepheus_mark_row:
  	mov		x3, #64
  	mov		x5, x0
-diff --git a/osfmk/arm64/nabu_early.c b/osfmk/arm64/nabu_early.c
---- a/osfmk/arm64/nabu_early.c
-+++ b/osfmk/arm64/nabu_early.c
+diff --git a/osfmk/arm64/cepheus_early.c b/osfmk/arm64/cepheus_early.c
+--- a/osfmk/arm64/cepheus_early.c
++++ b/osfmk/arm64/cepheus_early.c
 @@ -13,9 +13,9 @@
  
  static volatile uint32_t *early_fb = (volatile uint32_t *)(uintptr_t)0x9c000000;
@@ -1546,10 +1546,10 @@ diff --git a/osfmk/arm64/nabu_early.c b/osfmk/arm64/nabu_early.c
  		}
  	}
  	__asm__ volatile("dsb sy" ::: "memory");
--	nabu_early_string("NABU EARLY ");
-+	nabu_early_string("NABU EARLY ");
+-	cepheus_early_string("CEPHEUS EARLY ");
++	cepheus_early_string("CEPHEUS EARLY ");
  	if (stage >= 10) {
- 		nabu_early_putc((char)('0' + stage / 10));
+ 		cepheus_early_putc((char)('0' + stage / 10));
  	}
 diff --git a/osfmk/console/serial_console.c b/osfmk/console/serial_console.c
 --- a/osfmk/console/serial_console.c
@@ -1558,19 +1558,19 @@ diff --git a/osfmk/console/serial_console.c b/osfmk/console/serial_console.c
   *             waiting for an interrupt when the hardware device isn't ready
   * @param size The number of characters to print to the console.
   */
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- extern void nabu_log_append(const char *c, int size);  /* bsd/dev/nabu_ufs.c */
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ extern void cepheus_log_append(const char *c, int size);  /* bsd/dev/cepheus_ufs.c */
  /*
-  * Set by AppleCLCD (boot-arg nabufb_noconsole=1) once the GUI presents:
+  * Set by AppleCLCD (boot-arg cepheusfb_noconsole=1) once the GUI presents:
 @@ -281,7 +281,7 @@
  {
  	extern int disableConsoleOutput;
  
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- 	nabu_log_append(c, size);
- 	if (nabu_console_muted && !panic_active()) {
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ 	cepheus_log_append(c, size);
+ 	if (cepheus_console_muted && !panic_active()) {
  		return;
 diff --git a/osfmk/kern/exception.c b/osfmk/kern/exception.c
 --- a/osfmk/kern/exception.c
@@ -1579,8 +1579,8 @@ diff --git a/osfmk/kern/exception.c b/osfmk/kern/exception.c
  	return exception_triage_thread(exception, code, codeCnt, thread);
  }
  
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
  #include <vm/vm_shared_region.h>
  #include <arm/thread.h>
  
@@ -1589,10 +1589,10 @@ diff --git a/pexpert/arm/pe_fiq.c b/pexpert/arm/pe_fiq.c
 +++ b/pexpert/arm/pe_fiq.c
 @@ -116,7 +116,7 @@
  			}
- 			nabu_vtimer_intid = intid;
+ 			cepheus_vtimer_intid = intid;
  		}
--		kprintf("NABU GIC: virtual timer INTID %u\n", nabu_vtimer_intid);
-+		kprintf("NABU GIC: virtual timer INTID %u\n", nabu_vtimer_intid);
+-		kprintf("CEPHEUS GIC: virtual timer INTID %u\n", cepheus_vtimer_intid);
++		kprintf("CEPHEUS GIC: virtual timer INTID %u\n", cepheus_vtimer_intid);
  #endif
  
  		vm_offset_t soc_base_phys = pe_arm_get_soc_base_phys();
@@ -1603,9 +1603,9 @@ diff --git a/pexpert/pexpert/arm/protos.h b/pexpert/pexpert/arm/protos.h
  int uart_getc(void);
  
  void pe_init_fiq(void);
--#if defined(ARM64_BOARD_CONFIG_NABU)
-+#if defined(ARM64_BOARD_CONFIG_NABU) || defined(ARM64_BOARD_CONFIG_NABU)
- extern uint32_t nabu_vtimer_intid;
+-#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS) || defined(ARM64_BOARD_CONFIG_CEPHEUS)
+ extern uint32_t cepheus_vtimer_intid;
  #endif
  
 diff --git a/pexpert/pexpert/arm64/board_config.h b/pexpert/pexpert/arm64/board_config.h
@@ -1613,10 +1613,10 @@ diff --git a/pexpert/pexpert/arm64/board_config.h b/pexpert/pexpert/arm64/board_
 +++ b/pexpert/pexpert/arm64/board_config.h
 @@ -108,6 +108,17 @@
  
- #endif  /* ARM64_BOARD_CONFIG_NABU */
+ #endif  /* ARM64_BOARD_CONFIG_CEPHEUS */
  
-+#ifdef ARM64_BOARD_CONFIG_NABU
-+#include <pexpert/arm64/NABU.h>
++#ifdef ARM64_BOARD_CONFIG_CEPHEUS
++#include <pexpert/arm64/CEPHEUS.h>
 +
 +#define MAX_L2_CLINE                   6
 +#define MAX_CPUS                       8
@@ -1624,7 +1624,7 @@ diff --git a/pexpert/pexpert/arm64/board_config.h b/pexpert/pexpert/arm64/board_
 +
 +#define CORE_NCTRS                     8 /* Placeholder; KPC is not enabled for this target */
 +
-+#endif  /* ARM64_BOARD_CONFIG_NABU */
++#endif  /* ARM64_BOARD_CONFIG_CEPHEUS */
 +
  #ifdef ARM64_BOARD_CONFIG_VMAPPLE
  #include <pexpert/arm64/VMAPPLE.h>

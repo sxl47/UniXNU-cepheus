@@ -1,5 +1,5 @@
---- a/bsd/dev/nabu_usb.c
-+++ b/bsd/dev/nabu_usb.c
+--- a/bsd/dev/cepheus_usb.c
++++ b/bsd/dev/cepheus_usb.c
 @@ -33,6 +33,9 @@
  #include <net/kpi_interface.h>
  #include <net/kpi_protocol.h>
@@ -9,7 +9,7 @@
 +#include <sys/kern_event.h>
  
  extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
- void nabu_usb_probe(void);
+ void cepheus_usb_probe(void);
 @@ -375,6 +378,7 @@
  
  static void ud_rx_arm(void);

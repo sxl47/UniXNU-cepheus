@@ -31,7 +31,7 @@
  	if (ref != NULL && ref->surface == s) {
 -		ref->count++;
  		IOLockUnlock(fLock);
- 		nabu_surface_put(s);
+ 		cepheus_surface_put(s);
  		*refOut = ref;
 +		*existing = true;
  		return kIOReturnSuccess;
@@ -50,12 +50,12 @@
 @@ -624,10 +633,13 @@
  		ret = kIOReturnNoMemory;
  	} else {
- 		nabu_surface_fill_result(s, ref, out);
+ 		cepheus_surface_fill_result(s, ref, out);
 +		if (existing) {
 +			put64(out, 0x00, ~0ULL);        /* "already yours": use the cached client */
 +		}
- 		ret = nabu_struct_out(args, out, NABU_SURFACE_RESULT_SIZE);
- 		IOFreeData(out, NABU_SURFACE_RESULT_SIZE);
+ 		ret = cepheus_struct_out(args, out, CEPHEUS_SURFACE_RESULT_SIZE);
+ 		IOFreeData(out, CEPHEUS_SURFACE_RESULT_SIZE);
  	}
 -	if (ret != kIOReturnSuccess) {
 +	if (ret != kIOReturnSuccess && !existing) {

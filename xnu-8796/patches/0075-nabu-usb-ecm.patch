@@ -1,5 +1,5 @@
---- a/bsd/dev/nabu_usb.c
-+++ b/bsd/dev/nabu_usb.c
+--- a/bsd/dev/cepheus_usb.c
++++ b/bsd/dev/cepheus_usb.c
 @@ -21,6 +21,18 @@
  #include <vm/pmap.h>
  #include <vm/vm_kern.h>
@@ -18,7 +18,7 @@
 +#include <netinet/in.h>
  
  extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
- void nabu_usb_probe(void);
+ void cepheus_usb_probe(void);
 @@ -184,10 +196,25 @@
  #define UD_EVT_SIZE     0x1000
  #define UD_TRB_OUT      0x1000          /* ep0 OUT TRB */
@@ -120,9 +120,9 @@
 +};
 +/* The host side's MAC (ECM iMACAddress); the phone's own is ..:02 */
 +static const char *const ud_strings[] = {
-+	NULL, "ios-nabu", "Nabu iOS (USB Ethernet)", "0001", "02005E77EE01",
++	NULL, "ios-cepheus", "Nabu iOS (USB Ethernet)", "0001", "02005E77EE01",
  };
--static const char *const ud_strings[] = { NULL, "ios-nabu", "Nabu iOS (USB bring-up)", "0001" };
+-static const char *const ud_strings[] = { NULL, "ios-cepheus", "Nabu iOS (USB bring-up)", "0001" };
 +static const uint8_t ud_phone_mac[ETHER_ADDR_LEN] = { 0x02, 0x00, 0x5e, 0x77, 0xee, 0x02 };
  
  static uint32_t
@@ -161,13 +161,13 @@
 +	    ud_epcmd(EP_INT, DEPCMD_SETEPCONFIG, (3u << 1) | (16u << 3) | (2u << 17),
 +	    (1u << 8) | (8u << 16) | ((uint32_t)EP_INT << 25), 0) ||
 +	    ud_epcmd(EP_INT, DEPCMD_SETTRANSFRESOURCE, 1, 0, 0)) {
-+		printf("NABU USB: data endpoints setup failed\n");
++		printf("CEPHEUS USB: data endpoints setup failed\n");
 +		return;
 +	}
 +	dwc_wr(DALEPENA, dwc_rd(DALEPENA) | (1u << EP_RX) | (1u << EP_TX) | (1u << EP_INT));
 +	ud.configured = true;
 +	ud_rx_arm();
-+	printf("NABU USB: ECM endpoints configured\n");
++	printf("CEPHEUS USB: ECM endpoints configured\n");
 +}
 +
  static void
@@ -182,8 +182,8 @@
  	uint32_t n = 0;
  	bool ok = true;
  
--	printf("NABU USB: setup %02x %02x %04x len %u\n", type, req, value, length);
-+	printf("NABU USB: setup %02x %02x %04x %04x len %u\n", type, req, value, index, length);
+-	printf("CEPHEUS USB: setup %02x %02x %04x len %u\n", type, req, value, length);
++	printf("CEPHEUS USB: setup %02x %02x %04x %04x len %u\n", type, req, value, index, length);
  	ud.data_in = (type & 0x80) != 0;
 -	if ((type & 0x60) != 0) {       /* only standard requests */
 +	if ((type & 0x60) == 0x20) {    /* class request (e.g. SET_ETHERNET_PACKET_FILTER) */
@@ -194,12 +194,12 @@
  		switch (value >> 8) {
 @@ -343,12 +442,24 @@
  		dwc_wr(DCFG, dcfg | ((uint32_t)(value & 0x7f) << 3));
- 		printf("NABU USB: address %u\n", value & 0x7f);
+ 		printf("CEPHEUS USB: address %u\n", value & 0x7f);
  	} else if (req == 9) {          /* SET_CONFIGURATION */
 +		if (value == 1) {
 +			ud_configure();
 +		}
- 		printf("NABU USB: configured (%u)\n", value);
+ 		printf("CEPHEUS USB: configured (%u)\n", value);
  	} else if (req == 8) {          /* GET_CONFIGURATION */
 -		data[0] = 1; n = 1;
 +		data[0] = ud.configured ? 1 : 0; n = 1;
@@ -331,15 +331,15 @@
 +	struct ifnet_init_eparams init;
 +	static lck_grp_t *grp;
 +
-+	grp = lck_grp_alloc_init("nabu_usb", LCK_GRP_ATTR_NULL);
++	grp = lck_grp_alloc_init("cepheus_usb", LCK_GRP_ATTR_NULL);
 +	ud.lock = lck_mtx_alloc_init(grp, LCK_ATTR_NULL);
 +
 +	bzero(&init, sizeof(init));
 +	init.ver = IFNET_INIT_CURRENT_VERSION;
 +	init.len = sizeof(init);
 +	init.flags = IFNET_INIT_LEGACY;
-+	init.uniqueid = "nabu-usb-ecm";
-+	init.uniqueid_len = sizeof("nabu-usb-ecm") - 1;
++	init.uniqueid = "cepheus-usb-ecm";
++	init.uniqueid_len = sizeof("cepheus-usb-ecm") - 1;
 +	init.name = "ue";
 +	init.unit = 0;
 +	init.family = IFNET_FAMILY_ETHERNET;
@@ -355,7 +355,7 @@
 +	init.broadcast_addr = etherbroadcastaddr;
 +	init.broadcast_len = ETHER_ADDR_LEN;
 +	if (ifnet_allocate_extended(&init, &ud.ifp) != 0) {
-+		printf("NABU USB: ifnet_allocate failed\n");
++		printf("CEPHEUS USB: ifnet_allocate failed\n");
 +		ud.ifp = NULL;
 +		return;
 +	}
@@ -365,7 +365,7 @@
 +	ifnet_set_baudrate(ud.ifp, 480000000);
 +	ifnet_set_flags(ud.ifp, IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST, 0xffff);
 +	if (ifnet_attach(ud.ifp, NULL) != 0) {
-+		printf("NABU USB: ifnet_attach failed\n");
++		printf("CEPHEUS USB: ifnet_attach failed\n");
 +		ud.ifp = NULL;
 +		return;
 +	}
@@ -396,7 +396,7 @@
 +		sock_close(so);
 +	}
 +	ifnet_set_flags(ud.ifp, IFF_UP | IFF_RUNNING, IFF_UP | IFF_RUNNING);
-+	printf("NABU USB: ue0 192.168.7.2/24 %s (err %d)\n", err ? "NOT configured" : "up", err);
++	printf("CEPHEUS USB: ue0 192.168.7.2/24 %s (err %d)\n", err ? "NOT configured" : "up", err);
 +}
 +
  static void
@@ -435,14 +435,14 @@
  				ud.evt_pos = (ud.evt_pos + 4) % UD_EVT_SIZE;
 -				if (ud.events++ < 400) {
 +				if (ud.events++ < 200) {
- 					printf("NABU USB: event 0x%08x\n", ev);
+ 					printf("CEPHEUS USB: event 0x%08x\n", ev);
  				}
  				ud_event(ev);
  			}
  			dwc_wr(GEVNTCOUNT, count);
  		}
 +		if ((++ticks % 30000) == 0) {
-+			printf("NABU USB: ue0 rx %llu tx %llu frames\n", ud.rx_frames, ud.tx_frames);
++			printf("CEPHEUS USB: ue0 rx %llu tx %llu frames\n", ud.rx_frames, ud.tx_frames);
 +		}
  		ud_sleep_ms(1);
  	}

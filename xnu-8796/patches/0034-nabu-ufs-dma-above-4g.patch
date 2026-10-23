@@ -1,5 +1,5 @@
---- a/bsd/dev/nabu_ufs.c
-+++ b/bsd/dev/nabu_ufs.c
+--- a/bsd/dev/cepheus_ufs.c
++++ b/bsd/dev/cepheus_ufs.c
 @@ -42,6 +42,7 @@
  /* osfmk/arm/machine_routines.h, not exported to the BSD layer */
  extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
@@ -17,12 +17,12 @@
  #define UFS_BLOCK       4096u
  #define BOUNCE_SIZE     (1u << 20)
 @@ -305,6 +307,12 @@
- 		printf("NABU UFS: requests outstanding from the bootloader\n");
+ 		printf("CEPHEUS UFS: requests outstanding from the bootloader\n");
  		return EBUSY;
  	}
 +	/* With RAM above 4 GiB (mkadt.py --highmem) the DMA memory can be there too. */
 +	if (((su.dma_pa + DMA_SIZE - 1) >> 32) && !(ufs_rd(REG_CAP) & CAP_64AS)) {
-+		printf("NABU UFS: DMA memory at 0x%llx but the host has no 64-bit addressing\n",
++		printf("CEPHEUS UFS: DMA memory at 0x%llx but the host has no 64-bit addressing\n",
 +		    su.dma_pa);
 +		return ENXIO;
 +	}
@@ -33,8 +33,8 @@
  	/* Only now, with the partition bounds known, can writes be allowed. */
  	su.writable = (rw != 0);
  	su.ready = true;
--	printf("NABU UFS: \"%s\" on LUN %u: first block 0x%llx, %llu MiB, %s\n",
-+	printf("NABU UFS: \"%s\" on LUN %u: first block 0x%llx, %llu MiB, %s, DMA at 0x%llx\n",
+-	printf("CEPHEUS UFS: \"%s\" on LUN %u: first block 0x%llx, %llu MiB, %s\n",
++	printf("CEPHEUS UFS: \"%s\" on LUN %u: first block 0x%llx, %llu MiB, %s, DMA at 0x%llx\n",
  	    want, su.lun, su.first_block, su.nblocks * UFS_BLOCK >> 20,
 -	    su.writable ? "read-write" : "read-only");
 +	    su.writable ? "read-write" : "read-only", su.dma_pa);

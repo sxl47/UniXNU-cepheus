@@ -1,9 +1,9 @@
-diff --git a/config/MASTER.arm64.nabu b/config/MASTER.arm64.nabu
+diff --git a/config/MASTER.arm64.cepheus b/config/MASTER.arm64.cepheus
 index 6c63bbd..347efee 100644
---- a/config/MASTER.arm64.nabu
-+++ b/config/MASTER.arm64.nabu
+--- a/config/MASTER.arm64.cepheus
++++ b/config/MASTER.arm64.cepheus
 @@ -2,7 +2,8 @@
- # nabu (Redmi Note 10 Pro, SM7150): MASTER.arm64.MacOSX plus the open-source
+ # cepheus (Redmi Note 10 Pro, SM7150): MASTER.arm64.MacOSX plus the open-source
  # arm64 assembly and pmap (nos_arm_asm, nos_arm_pmap). Apple's own SoC configs
  # link those from the KDK's closed lib<SOC>.os.<CONFIG>.a instead, which is
 -# arm64e and Apple-silicon specific. kpc is dropped: it programs Apple's PMU.
@@ -28,7 +28,7 @@ index 0000000..a8cd7b6
 +++ b/osfmk/arm64/ppl/sart.h
 @@ -0,0 +1,13 @@
 +/*
-+ * nabu: Apple's SART (IOMMU for NVMe/ANS) header is not in the open
++ * cepheus: Apple's SART (IOMMU for NVMe/ANS) header is not in the open
 + * source drop. There is no SART on Qualcomm hardware; bootstrap is a no-op.
 + */
 +#ifndef _ARM64_PPL_SART_H_
@@ -47,7 +47,7 @@ index 0000000..4a790c2
 +++ b/osfmk/arm64/ppl/uat.h
 @@ -0,0 +1,13 @@
 +/*
-+ * nabu: Apple's UAT (GPU unified address translator) header is not in the
++ * cepheus: Apple's UAT (GPU unified address translator) header is not in the
 + * open source drop. No UAT on Qualcomm hardware; bootstrap is a no-op.
 + */
 +#ifndef _ARM64_PPL_UAT_H_
@@ -66,7 +66,7 @@ index 0000000..711cdef
 +++ b/osfmk/arm64/tunables/tunables.s
 @@ -0,0 +1,7 @@
 +/*
-+ * nabu: Apple's per-SoC CPU tunables (implementation-defined HID/ACC
++ * cepheus: Apple's per-SoC CPU tunables (implementation-defined HID/ACC
 + * register settings applied in start.s) are not in the open source drop,
 + * and none of them exist on Cortex-A76/A55. APPLY_TUNABLES does nothing.
 + */

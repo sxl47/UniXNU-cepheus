@@ -1,5 +1,5 @@
---- a/bsd/dev/nabu_ufs.c
-+++ b/bsd/dev/nabu_ufs.c
+--- a/bsd/dev/cepheus_ufs.c
++++ b/bsd/dev/cepheus_ufs.c
 @@ -30,6 +30,7 @@
  #include <miscfs/devfs/devfs.h>
  #include <kern/locks.h>
@@ -93,7 +93,7 @@
 +		uint64_t now = mach_absolute_time();
 +		if (now > deadline) {
  			ufs_wr(REG_UTRLCLR, ~1u);
- 			printf("NABU UFS: command 0x%02x timed out\n", cdb[0]);
+ 			printf("CEPHEUS UFS: command 0x%02x timed out\n", cdb[0]);
  			return ETIMEDOUT;
  		}
 -		delay(1);
@@ -143,39 +143,39 @@
 - * start). Device block 0 of that area is a header:
 + * the partition every ufslogsecs seconds (default 10), far behind the HFS
 + * image at its start. Device block 0 of that area is a header:
-  *   "NABULOG" | u32 version 1 | u32 ring size | u64 total bytes written
+  *   "CEPHEUSLOG" | u32 version 1 | u32 ring size | u64 total bytes written
   *   | u64 flush sequence
   * ring offset of byte n = n % ring size. Read it from a recovery with
 @@ -622,10 +676,12 @@
   */
- #define NABU_LOG_SIZE          (4u << 20)
- #define NABU_LOG_BLOCKS        (1 + NABU_LOG_SIZE / UFS_BLOCK)
-+#define NABU_LOG_SECS          10u
+ #define CEPHEUS_LOG_SIZE          (4u << 20)
+ #define CEPHEUS_LOG_BLOCKS        (1 + CEPHEUS_LOG_SIZE / UFS_BLOCK)
++#define CEPHEUS_LOG_SECS          10u
  
- static char nabu_log_ring[NABU_LOG_SIZE];
- static uint64_t _Atomic nabu_log_total;
- static int nabu_log_chan;
-+static uint32_t nabu_log_secs = NABU_LOG_SECS;
+ static char cepheus_log_ring[CEPHEUS_LOG_SIZE];
+ static uint64_t _Atomic cepheus_log_total;
+ static int cepheus_log_chan;
++static uint32_t cepheus_log_secs = CEPHEUS_LOG_SECS;
  
  /* Called for all console output, any context: never blocks. */
- void nabu_log_append(const char *c, int size);
+ void cepheus_log_append(const char *c, int size);
 @@ -658,7 +714,7 @@
- 	printf("NABU LOG: console log to the last %u KiB of the partition (block 0x%llx)\n",
- 	    NABU_LOG_BLOCKS * UFS_BLOCK >> 10, base);
+ 	printf("CEPHEUS LOG: console log to the last %u KiB of the partition (block 0x%llx)\n",
+ 	    CEPHEUS_LOG_BLOCKS * UFS_BLOCK >> 10, base);
  	for (;;) {
--		(void)tsleep(&nabu_log_chan, PZERO, "nabulog", hz);
-+		(void)tsleep(&nabu_log_chan, PZERO, "nabulog", hz * (int)nabu_log_secs);
- 		uint64_t total = os_atomic_load(&nabu_log_total, relaxed);
+-		(void)tsleep(&cepheus_log_chan, PZERO, "cepheuslog", hz);
++		(void)tsleep(&cepheus_log_chan, PZERO, "cepheuslog", hz * (int)cepheus_log_secs);
+ 		uint64_t total = os_atomic_load(&cepheus_log_total, relaxed);
  		if (total == flushed) {
  			continue;
 @@ -708,6 +764,10 @@
- 	if (!on || !su.writable || su.nblocks < 2 * NABU_LOG_BLOCKS) {
+ 	if (!on || !su.writable || su.nblocks < 2 * CEPHEUS_LOG_BLOCKS) {
  		return;
  	}
-+	PE_parse_boot_argn("ufslogsecs", &nabu_log_secs, sizeof(nabu_log_secs));
-+	if (nabu_log_secs == 0 || nabu_log_secs > 60) {
-+		nabu_log_secs = NABU_LOG_SECS;
++	PE_parse_boot_argn("ufslogsecs", &cepheus_log_secs, sizeof(cepheus_log_secs));
++	if (cepheus_log_secs == 0 || cepheus_log_secs > 60) {
++		cepheus_log_secs = CEPHEUS_LOG_SECS;
 +	}
- 	if (kernel_thread_start(nabu_log_thread, NULL, &thread) == KERN_SUCCESS) {
+ 	if (kernel_thread_start(cepheus_log_thread, NULL, &thread) == KERN_SUCCESS) {
  		thread_deallocate(thread);
  	}

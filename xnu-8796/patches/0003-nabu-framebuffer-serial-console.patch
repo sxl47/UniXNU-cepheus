@@ -9,9 +9,9 @@ index 997a4ab..db26bbe 100644
 +/*****************************************************************************/
 +
 +/*
-+ * nabu: framebuffer "serial" for boards with no usable UART (the Redmi Note
++ * cepheus: framebuffer "serial" for boards with no usable UART (the Redmi Note
 + * 10 Pro's debug UART engine runs in SPI mode). kprintf output is drawn onto
-+ * the boot framebuffer described by the ADT node "nabu-fbcon":
++ * the boot framebuffer described by the ADT node "cepheus-fbcon":
 + *   reg    = <phys size>       absolute physical address, not arm-io relative
 + *   width, height              pixels
 + *   stride                     bytes per line, 32bpp
@@ -108,14 +108,14 @@ index 997a4ab..db26bbe 100644
 +	return 0;
 +}
 +
-+SECURITY_READ_ONLY_LATE(static struct pe_serial_functions) nabu_fbcon_serial_functions =
++SECURITY_READ_ONLY_LATE(static struct pe_serial_functions) cepheus_fbcon_serial_functions =
 +{
 +	.init = fbcon_init,
 +	.transmit_ready = fbcon_transmit_ready,
 +	.transmit_data = fbcon_transmit_data,
 +	.receive_ready = fbcon_receive_ready,
 +	.receive_data = fbcon_receive_data,
-+	.device = SERIAL_NABU_FBCON
++	.device = SERIAL_CEPHEUS_FBCON
 +};
 +
 +static void
@@ -126,7 +126,7 @@ index 997a4ab..db26bbe 100644
 +	uint32_t const *val;
 +	unsigned int size;
 +
-+	if (SecureDTFindEntry("name", "nabu-fbcon", &entry) != kSuccess ||
++	if (SecureDTFindEntry("name", "cepheus-fbcon", &entry) != kSuccess ||
 +	    SecureDTGetProperty(entry, "reg", (void const **)&reg, &size) != kSuccess || size < 16) {
 +		return;
 +	}
@@ -144,7 +144,7 @@ index 997a4ab..db26bbe 100644
 +	}
 +	fbcon_base = (volatile uint32_t *)ml_io_map_wcomb(reg[0], reg[1]);
 +	if (fbcon_base != NULL) {
-+		register_serial_functions(&nabu_fbcon_serial_functions);
++		register_serial_functions(&cepheus_fbcon_serial_functions);
 +	}
 +}
 +
@@ -170,7 +170,7 @@ index 404b50b..de0d744 100644
  	SERIAL_VMAPPLE_UART=0x8,
 -	SERIAL_DCC_UART=0x10
 +	SERIAL_DCC_UART=0x10,
-+	SERIAL_NABU_FBCON=0x20
++	SERIAL_CEPHEUS_FBCON=0x20
  } serial_device_t;
  
  kern_return_t serial_irq_enable(serial_device_t device);

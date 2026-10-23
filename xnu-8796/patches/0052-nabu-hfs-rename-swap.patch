@@ -4,9 +4,9 @@
  					_err = VNOP_RENAME(fdvp, *fvpp, fcnp, tdvp, *tvpp, tcnp, ctx);
  				}
  			}
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +			/*
-+			 * NABU: HFS has no RENAME_SWAP, which Foundation's atomic
++			 * CEPHEUS: HFS has no RENAME_SWAP, which Foundation's atomic
 +			 * writes use (usermanagerd: "Failed to atomically swap writing
 +			 * file: Operation not supported"). Swapping two regular files
 +			 * on one volume is what exchangedata does: each name ends up

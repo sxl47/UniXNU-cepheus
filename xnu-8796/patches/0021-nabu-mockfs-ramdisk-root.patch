@@ -1,6 +1,6 @@
-diff --git a/config/MASTER.arm64.nabu b/config/MASTER.arm64.nabu
---- a/config/MASTER.arm64.nabu
-+++ b/config/MASTER.arm64.nabu
+diff --git a/config/MASTER.arm64.cepheus b/config/MASTER.arm64.cepheus
+--- a/config/MASTER.arm64.cepheus
++++ b/config/MASTER.arm64.cepheus
 @@ -31,7 +31,7 @@
  #  BSD_RELEASE =    [ BSD_BASE ]
  #  BSD_DEV =        [ BSD_BASE config_vnguard ]
@@ -38,9 +38,9 @@ diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
  	bool unhide;
  
  	ioblockstoragedriverClass = OSMetaClass::getMetaClassWithName(gIOBlockStorageDriverKey);
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +	/*
-+	 * NABU has no IOStorageFamily, so no service can be a block storage
++	 * CEPHEUS has no IOStorageFamily, so no service can be a block storage
 +	 * driver: the root (e.g. a RAM disk) is not block media, as for image boot.
 +	 */
 +	if (!ioblockstoragedriverClass) {

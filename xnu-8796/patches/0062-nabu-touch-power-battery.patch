@@ -1,34 +1,34 @@
 --- a/bsd/conf/files
 +++ b/bsd/conf/files
 @@ -108,6 +108,8 @@
- bsd/dev/nabu_sample.c			standard
- bsd/dev/nabu_keys.c			standard
- bsd/dev/nabu_touch.c			standard
-+bsd/dev/nabu_rpmh.c			standard
-+bsd/dev/nabu_spmi.c			standard
+ bsd/dev/cepheus_sample.c			standard
+ bsd/dev/cepheus_keys.c			standard
+ bsd/dev/cepheus_touch.c			standard
++bsd/dev/cepheus_rpmh.c			standard
++bsd/dev/cepheus_spmi.c			standard
  bsd/dev/mem.c				standard
  bsd/dev/munge.c 			optional config_requires_u32_munging
  bsd/dev/unix_startup.c			standard
---- a/bsd/dev/nabu_touch.c
-+++ b/bsd/dev/nabu_touch.c
+--- a/bsd/dev/cepheus_touch.c
++++ b/bsd/dev/cepheus_touch.c
 @@ -1,8 +1,8 @@
  /*
-  * NABU SE7 FIFO I2C / GT9896 Yellowstone / Focaltech 54:52 bring-up.
+  * CEPHEUS SE7 FIFO I2C / GT9896 Yellowstone / Focaltech 54:52 bring-up.
   * Call once after the scheduler is running; all work runs on one thread.
 - * Requires ABL-loaded GENI I2C firmware and an already powered L11C rail.
 - * No firmware/config upload, RPMh votes or PMIC writes. Only IC data write:
-+ * Requires ABL-loaded GENI I2C firmware; votes L11C through nabu_rpmh.c.
++ * Requires ABL-loaded GENI I2C firmware; votes L11C through cepheus_rpmh.c.
 + * No firmware/config upload or direct PMIC writes. Only IC data write:
   * zero to GT9896's event status after reading a report. See hw-report.md.
   */
- #if defined(ARM64_BOARD_CONFIG_NABU)
+ #if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 @@ -18,6 +18,7 @@
  extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
  /* Mach MIG declaration is not included by BSD's exported thread.h. */
  extern kern_return_t thread_terminate(thread_t);
-+extern int nabu_rpmh_vreg_enable(const char *res, unsigned mv);
- extern void nabu_hid_touch(int finger, int down, int x, int y);
- void nabu_touch_init(void);
++extern int cepheus_rpmh_vreg_enable(const char *res, unsigned mv);
+ extern void cepheus_hid_touch(int finger, int down, int x, int y);
+ void cepheus_touch_init(void);
  
 @@ -105,14 +106,14 @@
  }
@@ -52,8 +52,8 @@
  	if (!touch_clocks() || !touch_se_init()) {
  		goto out;
  	}
--	printf("NABU TOUCH: TLMM reset=%#x irq=%#x vdd90=%#x; L11C must be powered by firmware\n",
-+	printf("NABU TOUCH: TLMM reset=%#x irq=%#x vdd90=%#x; voting L11C through RPMh\n",
+-	printf("CEPHEUS TOUCH: TLMM reset=%#x irq=%#x vdd90=%#x; L11C must be powered by firmware\n",
++	printf("CEPHEUS TOUCH: TLMM reset=%#x irq=%#x vdd90=%#x; voting L11C through RPMh\n",
  	    touch_rd(st.gpio, TOUCH_GPIO_IO(8)), touch_rd(st.gpio, TOUCH_GPIO_IO(9)),
  	    touch_rd(st.gpio, TOUCH_GPIO_IO(90)));
 -	touch_gpio(6, 1, 0, 0, false); /* qup11 SDA/SCL, 2 mA, no internal pull */
@@ -66,9 +66,9 @@
 +	/* Keep the IC in reset while its rails settle; IRQ stays an input. */
 +	touch_gpio(9, 0, 3, 3, false, false); /* IRQ input, 8 mA, pull-up */
 +	touch_gpio(8, 0, 3, 3, true, false);
-+	int power_error = nabu_rpmh_vreg_enable("ldoc11", 3200);
++	int power_error = cepheus_rpmh_vreg_enable("ldoc11", 3200);
 +	if (power_error) {
-+		printf("NABU TOUCH: L11C RPMh enable failed %d; probes skipped\n", power_error);
++		printf("CEPHEUS TOUCH: L11C RPMh enable failed %d; probes skipped\n", power_error);
 +		goto out;
 +	}
 +	touch_gpio(90, 0, 0, 0, true, true); /* board digital power enable */
@@ -82,7 +82,7 @@
 +	touch_wait(300); /* exceeds vendor 5 ms test + 95 ms post-test wait */
  	uint8_t gid[12] = {0}, fid1 = 0, fid2 = 0;
  	int ge = touch_read(0x5d, 0x4022, true, gid, sizeof(gid));
- 	printf("NABU TOUCH: probe 0x5d err=%d pid=%02x%02x%02x%02x fw=%02x.%02x.%02x.%02x irq=%#x\n",
+ 	printf("CEPHEUS TOUCH: probe 0x5d err=%d pid=%02x%02x%02x%02x fw=%02x.%02x.%02x.%02x irq=%#x\n",
 --- a/iokit/conf/files.arm64
 +++ b/iokit/conf/files.arm64
 @@ -15,6 +15,7 @@
@@ -108,14 +108,14 @@
      "   {"
      "     'IOClass'         = IOPanicPlatform;"
 --- /dev/null
-+++ b/bsd/dev/nabu_rpmh.c
++++ b/bsd/dev/cepheus_rpmh.c
 @@ -0,0 +1,358 @@
 +/*
-+ * NABU PM6150L L11C bring-up; see report.md for DT and source evidence.
++ * CEPHEUS PM6150L L11C bring-up; see report.md for DT and source evidence.
 + * Sole XNU apps-DRV owner, called from thread context with deep idle disabled.
 + * No sleep/wake programming, SPMI writes, GIC handler, or timeout recovery.
 + */
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +#include <sys/param.h>
 +#include <sys/systm.h>
 +#include <sys/errno.h>
@@ -123,7 +123,7 @@
 +#include <machine/machine_routines.h>
 +
 +extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
-+int nabu_rpmh_vreg_enable(const char *res, unsigned mv);
++int cepheus_rpmh_vreg_enable(const char *res, unsigned mv);
 +
 +/* Live downstream DT has two positional reg entries, no reg-names. */
 +#define RH_RSC_PA       0x18220000u
@@ -190,7 +190,7 @@
 +		}
 +		delay(1);
 +	}
-+	printf("NABU RPMH: readback timeout off=%#x want=%#x got=%#x\n",
++	printf("CEPHEUS RPMH: readback timeout off=%#x want=%#x got=%#x\n",
 +	    off, value, rh_read(rh_tcs, off));
 +	return false;
 +}
@@ -222,7 +222,7 @@
 +		rh_dict = ml_io_map(RH_DICT_PA, 8);
 +	}
 +	if (!rh_rsc || !rh_tcs || !rh_dict) {
-+		printf("NABU RPMH: RSC/locator mapping failed\n");
++		printf("CEPHEUS RPMH: RSC/locator mapping failed\n");
 +		return ENOMEM;
 +	}
 +	uint32_t id = rh_read(rh_rsc, 0);
@@ -231,24 +231,24 @@
 +	unsigned major = (id >> 16) & 0xffu;
 +	unsigned count = (config >> (6u * RH_DRV)) & 0x3fu;
 +	rh_ncpt = (config >> 27) & 0x1fu;
-+	printf("NABU RPMH: rsc=%#x tcs=%#x DRV=%u id=%#x solver=%#x config=%#x TCS=%u ncpt=%u\n",
++	printf("CEPHEUS RPMH: rsc=%#x tcs=%#x DRV=%u id=%#x solver=%#x config=%#x TCS=%u ncpt=%u\n",
 +	    RH_RSC_PA, RH_TCS_PA, RH_DRV, id, solver, config, count, rh_ncpt);
 +	/* This client implements the pre-v3 layout only; do not guess v3 offsets. */
 +	if ((major != 1 && major != 2) || config == 0xffffffffu ||
 +	    solver == 0xffffffffu || count < RH_NORMAL_N ||
 +	    count > RH_TCS_SIZE / RH_TCS_STRIDE || rh_ncpt < 3 || rh_ncpt > 16) {
-+		printf("NABU RPMH: unsupported RSC geometry/revision\n");
++		printf("CEPHEUS RPMH: unsupported RSC geometry/revision\n");
 +		return ENODEV;
 +	}
 +	if (!rh_db) {
 +		uint32_t pa = rh_read(rh_dict, 0);
 +		uint32_t size = rh_read(rh_dict, 4);
-+		printf("NABU RPMH: cmd-db locator=%#x pa=%#x size=%#x\n", RH_DICT_PA, pa, size);
++		printf("CEPHEUS RPMH: cmd-db locator=%#x pa=%#x size=%#x\n", RH_DICT_PA, pa, size);
 +		/* Firmware supplies the reserved RAM address; never scan physical RAM. */
 +		if (pa < 0x80000000u || (pa & 3u) || (size & 3u) ||
 +		    size < RH_DB_HEADER || size > RH_DB_MAX ||
 +		    (uint64_t)pa + size > 0x100000000ULL) {
-+			printf("NABU RPMH: invalid cmd-db locator\n");
++			printf("CEPHEUS RPMH: invalid cmd-db locator\n");
 +			return EINVAL;
 +		}
 +		rh_db = ml_io_map(pa, size);
@@ -260,11 +260,11 @@
 +	uint32_t db_version = rh_read(rh_db, 0);
 +	uint32_t magic = rh_read(rh_db, 4);
 +	uint32_t flags = rh_read(rh_db, 140);
-+	printf("NABU RPMH: cmd-db version=%#x magic=%#x checksum=%#x flags=%#x\n",
++	printf("CEPHEUS RPMH: cmd-db version=%#x magic=%#x checksum=%#x flags=%#x\n",
 +	    db_version, magic, rh_read(rh_db, 136), flags);
 +	/* Linux only checks magic; version 1 is an intentionally stricter policy. */
 +	if (magic != RH_DB_MAGIC || db_version != 1 || (flags & 1u)) {
-+		printf("NABU RPMH: unsupported/standalone cmd-db\n");
++		printf("CEPHEUS RPMH: unsupported/standalone cmd-db\n");
 +		return EINVAL;
 +	}
 +	return 0;
@@ -289,7 +289,7 @@
 +		unsigned count = rh_db16(h + 6);
 +		if (slave < 3 || slave > 5 || (entries & 3u) ||
 +		    !rh_range(entries, count * RH_DB_ENTRY) || !rh_range(aux, 0)) {
-+			printf("NABU RPMH: malformed cmd-db slave header %u\n", i);
++			printf("CEPHEUS RPMH: malformed cmd-db slave header %u\n", i);
 +			return EINVAL;
 +		}
 +		for (unsigned j = 0; j < count; ++j) {
@@ -300,18 +300,18 @@
 +			uint32_t addr = rh_read(rh_db, e + 16);
 +			if (slave != RH_VRM || (addr >> 16) != RH_VRM || (addr & 15u) ||
 +			    !rh_range(aux + rh_db16(e + 22), rh_db16(e + 20))) {
-+				printf("NABU RPMH: invalid VRM entry for %s\n", res);
++				printf("CEPHEUS RPMH: invalid VRM entry for %s\n", res);
 +				return EINVAL;
 +			}
 +			*address = addr;
 +			++matches;
-+			printf("NABU RPMH: %s addr=%#x slave=%u aux-version=%#x priority=%#x:%#x\n",
++			printf("CEPHEUS RPMH: %s addr=%#x slave=%u aux-version=%#x priority=%#x:%#x\n",
 +			    res, addr, slave, rh_db16(h + 8),
 +			    rh_read(rh_db, e + 8), rh_read(rh_db, e + 12));
 +		}
 +	}
 +	if (matches != 1) {
-+		printf("NABU RPMH: %s lookup matches=%u; refusing\n", res, matches);
++		printf("CEPHEUS RPMH: %s lookup matches=%u; refusing\n", res, matches);
 +		return ENODEV;
 +	}
 +	return 0;
@@ -337,7 +337,7 @@
 +	for (unsigned t = 0; t < RH_ACTIVE_N; ++t) {
 +		uint32_t b = t * RH_TCS_STRIDE;
 +		uint32_t enabled = rh_read(rh_tcs, b + RH_ENABLE);
-+		printf("NABU RPMH: ACTIVE TCS%u idle=%#x control=%#x enable=%#x wait=%#x\n",
++		printf("CEPHEUS RPMH: ACTIVE TCS%u idle=%#x control=%#x enable=%#x wait=%#x\n",
 +		    t, rh_read(rh_tcs, b + RH_STATUS), rh_read(rh_tcs, b + RH_CONTROL),
 +		    enabled, rh_read(rh_tcs, b + RH_WAIT));
 +		if (enabled & ~((1u << rh_ncpt) - 1u)) {
@@ -346,7 +346,7 @@
 +		for (unsigned c = 0; c < rh_ncpt; ++c) {
 +			if ((enabled & (1u << c)) &&
 +			    (rh_read(rh_tcs, b + RH_ADDR + c * RH_CMD_STRIDE) & ~15u) == address) {
-+				printf("NABU RPMH: conflicting inherited L11C request in TCS%u\n", t);
++				printf("CEPHEUS RPMH: conflicting inherited L11C request in TCS%u\n", t);
 +				return EBUSY;
 +			}
 +		}
@@ -355,7 +355,7 @@
 +		}
 +	}
 +	if (chosen < 0) {
-+		printf("NABU RPMH: no empty idle ACTIVE TCS; leaving inherited state intact\n");
++		printf("CEPHEUS RPMH: no empty idle ACTIVE TCS; leaving inherited state intact\n");
 +		return EBUSY;
 +	}
 +	unsigned t = (unsigned)chosen;
@@ -381,7 +381,7 @@
 +	/* HPM (raw 7) is supported by this PMIC5 LDO; enable comes last. */
 +	const uint32_t offsets[3] = {0, 8, 4};
 +	const uint32_t values[3] = {mv, 7, 1};
-+	printf("NABU RPMH: TCS%u ACTIVE %u mV mode=7 enable=1 irq-enable=%#x\n", t, mv, irq_en);
++	printf("CEPHEUS RPMH: TCS%u ACTIVE %u mV mode=7 enable=1 irq-enable=%#x\n", t, mv, irq_en);
 +	for (unsigned c = 0; c < 3; ++c) {
 +		uint32_t cmd = b + c * RH_CMD_STRIDE;
 +		if (!rh_sync(cmd + RH_MSGID, RH_WRITE_ACK) ||
@@ -415,10 +415,10 @@
 +		}
 +		delay(1);
 +	}
-+	printf("NABU RPMH: TCS%u done=%d irq=%#x idle=%#x control=%#x cmd-status=%#x/%#x/%#x\n",
++	printf("CEPHEUS RPMH: TCS%u done=%d irq=%#x idle=%#x control=%#x cmd-status=%#x/%#x/%#x\n",
 +	    t, done, irq, idle, rh_read(rh_tcs, b + RH_CONTROL), status[0], status[1], status[2]);
 +	if (!done) {
-+		printf("NABU RPMH: timeout; TCS quarantined, IRQ remains masked; no reset/retry\n");
++		printf("CEPHEUS RPMH: timeout; TCS quarantined, IRQ remains masked; no reset/retry\n");
 +		return ETIMEDOUT;
 +	}
 +	/* Proven completion: clear trigger before mode, then free only our commands. */
@@ -432,16 +432,16 @@
 +		return EIO;
 +	}
 +	rh_poisoned = false;
-+	printf("NABU RPMH: L11C ACTIVE vote complete (rail voltage requires hardware verification)\n");
++	printf("CEPHEUS RPMH: L11C ACTIVE vote complete (rail voltage requires hardware verification)\n");
 +	return 0;
 +}
 +
 +int
-+nabu_rpmh_vreg_enable(const char *res, unsigned mv)
++cepheus_rpmh_vreg_enable(const char *res, unsigned mv)
 +{
 +	/* Board-specific helper: do not apply PMIC5-LDO policy to arbitrary resources. */
 +	if (!res || strcmp(res, "ldoc11") || mv < 2950 || mv > 3400) {
-+		printf("NABU RPMH: expected ldoc11 and 2950..3400 mV\n");
++		printf("CEPHEUS RPMH: expected ldoc11 and 2950..3400 mV\n");
 +		return EINVAL;
 +	}
 +	if (__atomic_exchange_n(&rh_lock, 1, __ATOMIC_ACQUIRE)) {
@@ -450,7 +450,7 @@
 +	int error = EIO;
 +	uint32_t address = 0;
 +	if (rh_poisoned) {
-+		printf("NABU RPMH: previous uncertain transaction; refusing further access\n");
++		printf("CEPHEUS RPMH: previous uncertain transaction; refusing further access\n");
 +		goto out;
 +	}
 +	error = rh_map();
@@ -462,28 +462,28 @@
 +	}
 +out:
 +	if (error) {
-+		printf("NABU RPMH: enable failed errno=%d\n", error);
++		printf("CEPHEUS RPMH: enable failed errno=%d\n", error);
 +	}
 +	__atomic_store_n(&rh_lock, 0, __ATOMIC_RELEASE);
 +	return error;
 +}
-+#endif /* ARM64_BOARD_CONFIG_NABU */
++#endif /* ARM64_BOARD_CONFIG_CEPHEUS */
 --- /dev/null
-+++ b/bsd/dev/nabu_spmi.c
++++ b/bsd/dev/cepheus_spmi.c
 @@ -0,0 +1,126 @@
 +/*
-+ * Battery-only adaptation of input/nabu_keys.c, observer EXT_READL.
++ * Battery-only adaptation of input/cepheus_keys.c, observer EXT_READL.
 + * PMIC READ ONLY. The only MMIO store issues a one-byte read command.
 + * No interrupt clear, peripheral enable, charger config, or PMIC writes.
 + * Init is serialized by the single built-in NabuBattery personality.
 + * Battery APIDs are disjoint from the existing keys' 008/4c1 APIDs.
 + */
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +#include <sys/param.h>
 +#include <sys/systm.h>
 +#include <machine/machine_routines.h>
 +#include <IOKit/IOLocks.h>
-+#include "nabu_spmi.h"
++#include "cepheus_spmi.h"
 +
 +extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
 +
@@ -525,7 +525,7 @@
 +}
 +
 +int
-+nabu_spmi_init(void)
++cepheus_spmi_init(void)
 +{
 +	if (sp_attempted) {
 +		return sp_ready ? 0 : -1;
@@ -539,25 +539,25 @@
 +	sp_cfg = ml_io_map(SP_CFG_PA, 0x1000);
 +	sp_obs = ml_io_map(SP_OBS_PA, 0x10000); /* EE 0, 512 * 0x80 */
 +	if (!sp_core || !sp_cfg || !sp_obs) {
-+		printf("NABU BATTERY: SPMI mapping failed\n");
++		printf("CEPHEUS BATTERY: SPMI mapping failed\n");
 +		return -1;
 +	}
 +	uint32_t arb_version = sp_rd(sp_core, 0);
 +	sp_count = sp_rd(sp_core, 4) & 0x7ffu;
 +	if (arb_version < 0x50000000u || arb_version >= 0x70000000u ||
 +	    !sp_count || sp_count > 512) {
-+		printf("NABU BATTERY: unsupported SPMI arb=%#x APIDs=%u\n",
++		printf("CEPHEUS BATTERY: unsupported SPMI arb=%#x APIDs=%u\n",
 +		    arb_version, sp_count);
 +		return -1;
 +	}
 +	sp_ready = true;
-+	printf("NABU BATTERY: SPMI arb=%#x APIDs=%u, observer reads only\n",
++	printf("CEPHEUS BATTERY: SPMI arb=%#x APIDs=%u, observer reads only\n",
 +	    arb_version, sp_count);
 +	return 0;
 +}
 +
 +int
-+nabu_spmi_read(unsigned sid, unsigned addr, uint8_t *out)
++cepheus_spmi_read(unsigned sid, unsigned addr, uint8_t *out)
 +{
 +	/* Restrict access to the battery blocks; keys retain their own lanes. */
 +	unsigned peripheral = addr >> 8;
@@ -591,25 +591,25 @@
 +		delay(1);
 +	}
 +	sp_poisoned[apid] = true;
-+	printf("NABU BATTERY: SPMI timeout sid=%u addr=%#x APID=%u disabled\n",
++	printf("CEPHEUS BATTERY: SPMI timeout sid=%u addr=%#x APID=%u disabled\n",
 +	    sid, addr, apid);
 +	IOLockUnlock(sp_lock);
 +	return -1;
 +}
-+#endif /* ARM64_BOARD_CONFIG_NABU */
++#endif /* ARM64_BOARD_CONFIG_CEPHEUS */
 --- /dev/null
-+++ b/bsd/dev/nabu_spmi.h
++++ b/bsd/dev/cepheus_spmi.h
 @@ -0,0 +1,14 @@
 +/* Shared C/C++ interface. Init once, on the NabuBattery start thread. */
-+#ifndef NABU_BATTERY_SPMI_H
-+#define NABU_BATTERY_SPMI_H
++#ifndef CEPHEUS_BATTERY_SPMI_H
++#define CEPHEUS_BATTERY_SPMI_H
 +#include <stdint.h>
 +#ifdef __cplusplus
 +extern "C" {
 +#endif
-+int nabu_spmi_init(void);
++int cepheus_spmi_init(void);
 +/* Thread context only; 0 success, -1 failure; *out unchanged on failure. */
-+int nabu_spmi_read(unsigned sid, unsigned addr, uint8_t *out);
++int cepheus_spmi_read(unsigned sid, unsigned addr, uint8_t *out);
 +#ifdef __cplusplus
 +}
 +#endif
@@ -619,11 +619,11 @@
 @@ -0,0 +1,319 @@
 +/*
 + * Built-in iOS battery bring-up service. Default: 100%, AC, not charging.
-+ * nabubattery=1: read-only PM6150 polling every 30 seconds; voltage-derived
++ * cepheusbattery=1: read-only PM6150 polling every 30 seconds; voltage-derived
 + * SOC is an UNCALIBRATED estimate, not a replacement for the Linux QG algo.
 + * See report.md for binary evidence, register provenance and integration.
 + */
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +#include <device/device_types.h> /* io_buf_ptr_t for private OSKext headers */
 +#include <IOKit/IOLib.h>
 +#include <IOKit/IOWorkLoop.h>
@@ -631,9 +631,9 @@
 +#include <IOKit/pwr_mgt/IOPMPowerSource.h>
 +#include <libkern/c++/OSCollectionIterator.h>
 +#include <pexpert/pexpert.h>
-+/* bsd/dev/nabu_spmi.c */
-+extern "C" int nabu_spmi_init(void);
-+extern "C" int nabu_spmi_read(unsigned sid, unsigned addr, uint8_t *out);
++/* bsd/dev/cepheus_spmi.c */
++extern "C" int cepheus_spmi_init(void);
++extern "C" int cepheus_spmi_read(unsigned sid, unsigned addr, uint8_t *out);
 +
 +class NabuBattery : public IOPMPowerSource {
 +	OSDeclareDefaultStructors(NabuBattery);
@@ -772,7 +772,7 @@
 +	updateStatus(); /* Flush PS properties and send 0xe0024100 on change. */
 +	int mode = measured ? 1 : 0;
 +	if (mode != fLastMode) {
-+		IOLog("NABU BATTERY: %s, %u%% %umV external=%d charging=%d\n",
++		IOLog("CEPHEUS BATTERY: %s, %u%% %umV external=%d charging=%d\n",
 +		    measured ? "PM6150 / estimated SOC" : "static fallback",
 +		    percent, mv, external, charging);
 +		fLastMode = mode;
@@ -788,8 +788,8 @@
 +	uint16_t previous = 0;
 +	for (unsigned attempt = 0; attempt < 4; ++attempt) {
 +		uint8_t lo, hi;
-+		if (nabu_spmi_read(0, address, &lo) ||
-+		    nabu_spmi_read(0, address + 1, &hi)) {
++		if (cepheus_spmi_read(0, address, &lo) ||
++		    cepheus_spmi_read(0, address + 1, &hi)) {
 +			return false;
 +		}
 +		uint16_t next = (uint16_t)((unsigned)lo | ((unsigned)hi << 8));
@@ -828,14 +828,14 @@
 +	uint8_t type, present, usb, path, charger, error, temperature;
 +	uint16_t rawVoltage;
 +	bool valid = fReal &&
-+	    !nabu_spmi_read(0, 0x4804, &type) && type == 0x0d &&
-+	    !nabu_spmi_read(0, 0x4808, &present) && (present & 1u) &&
++	    !cepheus_spmi_read(0, 0x4804, &type) && type == 0x0d &&
++	    !cepheus_spmi_read(0, 0x4808, &present) && (present & 1u) &&
 +	    readWord(0x48c0, &rawVoltage) && rawVoltage != 0x8000 &&
-+	    !nabu_spmi_read(0, 0x1310, &usb) &&
-+	    !nabu_spmi_read(0, 0x110b, &path) &&
-+	    !nabu_spmi_read(0, 0x1006, &charger) &&
-+	    !nabu_spmi_read(0, 0x1007, &error) &&
-+	    !nabu_spmi_read(0, 0x100d, &temperature);
++	    !cepheus_spmi_read(0, 0x1310, &usb) &&
++	    !cepheus_spmi_read(0, 0x110b, &path) &&
++	    !cepheus_spmi_read(0, 0x1006, &charger) &&
++	    !cepheus_spmi_read(0, 0x1007, &error) &&
++	    !cepheus_spmi_read(0, 0x100d, &temperature);
 +	unsigned mv = valid ? (unsigned)(((uint64_t)rawVoltage * 194637u) / 1000000u) : 0;
 +	/* Zero, reset, floating, or implausible data cannot become 0% battery. */
 +	valid = valid && mv >= 2800 && mv <= 4600;
@@ -853,7 +853,7 @@
 +	int ma = 0;
 +	uint8_t subtype;
 +	uint16_t rawCurrent;
-+	bool currentValid = !nabu_spmi_read(0, 0x4805, &subtype) &&
++	bool currentValid = !cepheus_spmi_read(0, 0x4805, &subtype) &&
 +	    (subtype == 3 || subtype == 4) && readWord(0x48c2, &rawCurrent) &&
 +	    rawCurrent != 0x8000;
 +	if (currentValid) {
@@ -882,8 +882,8 @@
 +		return false;
 +	}
 +	int real = 0;
-+	(void)PE_parse_boot_argn("nabubattery", &real, sizeof(real));
-+	fReal = real == 1 && nabu_spmi_init() == 0;
++	(void)PE_parse_boot_argn("cepheusbattery", &real, sizeof(real));
++	fReal = real == 1 && cepheus_spmi_init() == 0;
 +	/* Publish a complete source BEFORE registerService wakes powerd. */
 +	poll();
 +	if (fReal) {
@@ -896,7 +896,7 @@
 +		} else {
 +			fReal = false;
 +			poll();
-+			IOLog("NABU BATTERY: timer unavailable; static fallback\n");
++			IOLog("CEPHEUS BATTERY: timer unavailable; static fallback\n");
 +		}
 +	}
 +	registerService();
@@ -935,4 +935,4 @@
 +	OSSafeReleaseNULL(fLoop);
 +	IOPMPowerSource::free();
 +}
-+#endif /* ARM64_BOARD_CONFIG_NABU */
++#endif /* ARM64_BOARD_CONFIG_CEPHEUS */

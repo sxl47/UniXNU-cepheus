@@ -1,7 +1,7 @@
---- a/bsd/dev/nabu_usb.c
-+++ b/bsd/dev/nabu_usb.c
+--- a/bsd/dev/cepheus_usb.c
++++ b/bsd/dev/cepheus_usb.c
 @@ -13,10 +13,19 @@
- #if defined(ARM64_BOARD_CONFIG_NABU)
+ #if defined(ARM64_BOARD_CONFIG_CEPHEUS)
  #include <sys/param.h>
  #include <sys/systm.h>
 +#include <kern/clock.h>
@@ -14,8 +14,8 @@
  #include <pexpert/pexpert.h>
  
  extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
- void nabu_usb_probe(void);
-+static void nabu_usb_gadget_start(vm_offset_t dwc);
+ void cepheus_usb_probe(void);
++static void cepheus_usb_gadget_start(vm_offset_t dwc);
 +extern ppnum_t pmap_find_phys(pmap_t pmap, addr64_t va);
  
  #define GCC_PA                  0x00100000
@@ -24,28 +24,28 @@
  	uint32_t gdscr, cbcr[sizeof(usb_cbcr) / sizeof(usb_cbcr[0])];
  	bool clocks_on = true;
  
-+	/* nabuusb=0 off, 1 (default) report state only, 2 also start the USB device */
- 	PE_parse_boot_argn("nabuusb", &enabled, sizeof(enabled));
++	/* cepheususb=0 off, 1 (default) report state only, 2 also start the USB device */
+ 	PE_parse_boot_argn("cepheususb", &enabled, sizeof(enabled));
  	if (!enabled) {
  		return;
 @@ -91,6 +101,9 @@
- 	printf("NABU USB: DWC3 GEVNTADR 0x%08x%08x GEVNTSIZ 0x%08x GEVNTCOUNT 0x%08x GHWPARAMS0 0x%08x\n",
+ 	printf("CEPHEUS USB: DWC3 GEVNTADR 0x%08x%08x GEVNTSIZ 0x%08x GEVNTCOUNT 0x%08x GHWPARAMS0 0x%08x\n",
  	    usb_rd(dwc, 0xc404), usb_rd(dwc, 0xc400), usb_rd(dwc, 0xc408), usb_rd(dwc, 0xc40c),
  	    usb_rd(dwc, 0xc140));
 +	if (enabled >= 2) {
-+		nabu_usb_gadget_start(dwc);
++		cepheus_usb_gadget_start(dwc);
 +	}
  	if (cbcr[5] & CBCR_CLK_OFF) {
- 		printf("NABU USB: ahb2phy clock off; QUSB2 PHY not read\n");
+ 		printf("CEPHEUS USB: ahb2phy clock off; QUSB2 PHY not read\n");
  		return;
 @@ -105,4 +118,386 @@
- 	printf("NABU USB: QUSB2 PLL_STATUS 0x%08x PWR_CTRL1 0x%08x PORT_TUNE1 0x%08x TEST1 0x%08x\n",
+ 	printf("CEPHEUS USB: QUSB2 PLL_STATUS 0x%08x PWR_CTRL1 0x%08x PORT_TUNE1 0x%08x TEST1 0x%08x\n",
  	    usb_rd(phy, 0x1a0), usb_rd(phy, 0x210), usb_rd(phy, 0x240), usb_rd(phy, 0x254));
  }
 +
 +/*
 + * Step 2: USB device mode with only the default control endpoint, enough
-+ * for the host to enumerate the phone (boot-arg nabuusb=2). ABL leaves
++ * for the host to enumerate the phone (boot-arg cepheususb=2). ABL leaves
 + * the DWC3 powered, clocked, in device mode and halted, with the PHY set
 + * up, so only the device controller is restarted: soft reset, an event
 + * buffer in our memory, endpoint 0, run. Events are polled from a kernel
@@ -150,14 +150,14 @@
 +		if (!(v & DEPCMD_CMDACT)) {
 +			uint32_t status = (v >> 12) & 0xf;
 +			if (status) {
-+				printf("NABU USB: ep%u cmd 0x%x status %u\n", ep, cmd & 0xf, status);
++				printf("CEPHEUS USB: ep%u cmd 0x%x status %u\n", ep, cmd & 0xf, status);
 +				return -1;
 +			}
 +			return 0;
 +		}
 +		delay(1);
 +	}
-+	printf("NABU USB: ep%u cmd 0x%x timeout\n", ep, cmd & 0xf);
++	printf("CEPHEUS USB: ep%u cmd 0x%x timeout\n", ep, cmd & 0xf);
 +	return -1;
 +}
 +
@@ -204,7 +204,7 @@
 +	9, 2, 18, 0, 1, 1, 0, 0x80, 250,                /* config: 1 interface, 500 mA */
 +	9, 4, 0, 0, 0, 0xff, 0x00, 0x00, 0,             /* vendor interface, no endpoints */
 +};
-+static const char *const ud_strings[] = { NULL, "ios-nabu", "Nabu iOS (USB bring-up)", "0001" };
++static const char *const ud_strings[] = { NULL, "ios-cepheus", "Nabu iOS (USB bring-up)", "0001" };
 +
 +static uint32_t
 +ud_string(unsigned idx, uint8_t *out)
@@ -238,7 +238,7 @@
 +	uint32_t n = 0;
 +	bool ok = true;
 +
-+	printf("NABU USB: setup %02x %02x %04x len %u\n", type, req, value, length);
++	printf("CEPHEUS USB: setup %02x %02x %04x len %u\n", type, req, value, length);
 +	ud.data_in = (type & 0x80) != 0;
 +	if ((type & 0x60) != 0) {       /* only standard requests */
 +		ok = false;
@@ -252,9 +252,9 @@
 +	} else if (req == 5) {          /* SET_ADDRESS: takes effect now (DWC3 handles the timing) */
 +		uint32_t dcfg = dwc_rd(DCFG) & ~(0x7fu << 3);
 +		dwc_wr(DCFG, dcfg | ((uint32_t)(value & 0x7f) << 3));
-+		printf("NABU USB: address %u\n", value & 0x7f);
++		printf("CEPHEUS USB: address %u\n", value & 0x7f);
 +	} else if (req == 9) {          /* SET_CONFIGURATION */
-+		printf("NABU USB: configured (%u)\n", value);
++		printf("CEPHEUS USB: configured (%u)\n", value);
 +	} else if (req == 8) {          /* GET_CONFIGURATION */
 +		data[0] = 1; n = 1;
 +	} else if (req == 0) {          /* GET_STATUS */
@@ -289,7 +289,7 @@
 +		uint32_t type = (ev >> 8) & 0xf;
 +		if (type == 1) {        /* USB reset */
 +			dwc_wr(DCFG, dwc_rd(DCFG) & ~(0x7fu << 3));
-+			printf("NABU USB: bus reset\n");
++			printf("CEPHEUS USB: bus reset\n");
 +		} else if (type == 2) { /* connect done */
 +			uint32_t speed = dwc_rd(DSTS) & 7;
 +			/* ep0 max packet: 64 at high/full speed (modify action) */
@@ -297,9 +297,9 @@
 +			    (1u << 8) | (1u << 10) | (0u << 25), 0);
 +			ud_epcmd(1, DEPCMD_SETEPCONFIG, (0u << 1) | (64u << 3) | (2u << 30),
 +			    (1u << 8) | (1u << 10) | (1u << 25), 0);
-+			printf("NABU USB: connected, speed %u\n", speed);
++			printf("CEPHEUS USB: connected, speed %u\n", speed);
 +		} else if (type == 0) {
-+			printf("NABU USB: disconnect\n");
++			printf("CEPHEUS USB: disconnect\n");
 +		}
 +		return;
 +	}
@@ -352,7 +352,7 @@
 +				uint32_t ev = *(volatile uint32_t *)(ud.dma + UD_EVT + ud.evt_pos);
 +				ud.evt_pos = (ud.evt_pos + 4) % UD_EVT_SIZE;
 +				if (ud.events++ < 400) {
-+					printf("NABU USB: event 0x%08x\n", ev);
++					printf("CEPHEUS USB: event 0x%08x\n", ev);
 +				}
 +				ud_event(ev);
 +			}
@@ -363,14 +363,14 @@
 +}
 +
 +static void
-+nabu_usb_gadget_start(vm_offset_t dwc)
++cepheus_usb_gadget_start(vm_offset_t dwc)
 +{
 +	thread_t thread;
 +
 +	ud.dwc = dwc;
 +	if (kmem_alloc_contig(kernel_map, &ud.dma, UD_SIZE, PAGE_MASK, 0, 0,
 +	    KMA_DATA | KMA_ZERO | KMA_PERMANENT, VM_KERN_MEMORY_IOKIT) != KERN_SUCCESS) {
-+		printf("NABU USB: no DMA memory\n");
++		printf("CEPHEUS USB: no DMA memory\n");
 +		return;
 +	}
 +	ppnum_t pn = pmap_find_phys(kernel_pmap, (addr64_t)ud.dma);
@@ -385,7 +385,7 @@
 +	for (i = 0; i < 500 && (dwc_rd(DCTL) & DCTL_CSFTRST); i++) {
 +		delay(1000);
 +	}
-+	printf("NABU USB: soft reset %s after %d ms, GCTL 0x%08x DCFG 0x%08x\n",
++	printf("CEPHEUS USB: soft reset %s after %d ms, GCTL 0x%08x DCFG 0x%08x\n",
 +	    (dwc_rd(DCTL) & DCTL_CSFTRST) ? "STUCK" : "done", i, dwc_rd(GCTL), dwc_rd(DCFG));
 +	if (dwc_rd(DCTL) & DCTL_CSFTRST) {
 +		return;
@@ -409,7 +409,7 @@
 +	    ud_epcmd(0, DEPCMD_SETTRANSFRESOURCE, 1, 0, 0) ||
 +	    ud_epcmd(1, DEPCMD_SETEPCONFIG, (0u << 1) | (512u << 3), (1u << 8) | (1u << 10) | (1u << 25), 0) ||
 +	    ud_epcmd(1, DEPCMD_SETTRANSFRESOURCE, 1, 0, 0)) {
-+		printf("NABU USB: endpoint 0 setup failed\n");
++		printf("CEPHEUS USB: endpoint 0 setup failed\n");
 +		return;
 +	}
 +	dwc_wr(DALEPENA, 0x3);
@@ -419,9 +419,9 @@
 +	for (i = 0; i < 500 && (dwc_rd(DSTS) & DSTS_DEVCTRLHLT); i++) {
 +		delay(1000);
 +	}
-+	printf("NABU USB: running (DSTS 0x%08x after %d ms), DMA at 0x%llx\n", dwc_rd(DSTS), i, ud.dma_pa);
++	printf("CEPHEUS USB: running (DSTS 0x%08x after %d ms), DMA at 0x%llx\n", dwc_rd(DSTS), i, ud.dma_pa);
 +	if (kernel_thread_start(ud_thread, NULL, &thread) == KERN_SUCCESS) {
 +		thread_deallocate(thread);
 +	}
 +}
- #endif /* ARM64_BOARD_CONFIG_NABU */
+ #endif /* ARM64_BOARD_CONFIG_CEPHEUS */

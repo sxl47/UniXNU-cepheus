@@ -1,29 +1,29 @@
 --- a/libkern/conf/files
 +++ b/libkern/conf/files
 @@ -106,6 +106,9 @@
- libkern/crypto/nabu_md5.c	optional crypto
- libkern/crypto/nabu_dec32le.c	optional crypto
- libkern/crypto/nabu_enc32le.c	optional crypto
-+libkern/crypto/nabu_sha1.c	optional crypto
-+libkern/crypto/nabu_dec32be.c	optional crypto
-+libkern/crypto/nabu_enc32be.c	optional crypto
+ libkern/crypto/cepheus_md5.c	optional crypto
+ libkern/crypto/cepheus_dec32le.c	optional crypto
+ libkern/crypto/cepheus_enc32le.c	optional crypto
++libkern/crypto/cepheus_sha1.c	optional crypto
++libkern/crypto/cepheus_dec32be.c	optional crypto
++libkern/crypto/cepheus_enc32be.c	optional crypto
  libkern/crypto/corecrypto_aesxts.c		optional crypto
  libkern/crypto/corecrypto_rand.c		optional crypto
  libkern/crypto/corecrypto_rsa.c		    optional crypto
 --- a/libkern/conf/Makefile.template
 +++ b/libkern/conf/Makefile.template
 @@ -44,6 +44,15 @@
- nabu_dec32le.o_CFLAGS_ADD += -mgeneral-regs-only
- nabu_enc32le.o_CFLAGS_ADD += -mgeneral-regs-only
+ cepheus_dec32le.o_CFLAGS_ADD += -mgeneral-regs-only
+ cepheus_enc32le.o_CFLAGS_ADD += -mgeneral-regs-only
  corecrypto_md5.o_CFLAGS_ADD += -mgeneral-regs-only
 +# BearSSL SHA-1 behind the legacy SHA1Init/Update/Final API (corecrypto_sha1.c).
-+nabu_sha1.o_INCFLAGS = $(NABU_AES_INC)
-+nabu_dec32be.o_INCFLAGS = $(NABU_AES_INC)
-+nabu_enc32be.o_INCFLAGS = $(NABU_AES_INC)
-+corecrypto_sha1.o_INCFLAGS = $(NABU_AES_INC)
-+nabu_sha1.o_CFLAGS_ADD += -mgeneral-regs-only
-+nabu_dec32be.o_CFLAGS_ADD += -mgeneral-regs-only
-+nabu_enc32be.o_CFLAGS_ADD += -mgeneral-regs-only
++cepheus_sha1.o_INCFLAGS = $(CEPHEUS_AES_INC)
++cepheus_dec32be.o_INCFLAGS = $(CEPHEUS_AES_INC)
++cepheus_enc32be.o_INCFLAGS = $(CEPHEUS_AES_INC)
++corecrypto_sha1.o_INCFLAGS = $(CEPHEUS_AES_INC)
++cepheus_sha1.o_CFLAGS_ADD += -mgeneral-regs-only
++cepheus_dec32be.o_CFLAGS_ADD += -mgeneral-regs-only
++cepheus_enc32be.o_CFLAGS_ADD += -mgeneral-regs-only
 +corecrypto_sha1.o_CFLAGS_ADD += -mgeneral-regs-only
  endif
  
@@ -34,14 +34,14 @@
  	ctx->c.b64[0] = count;
  }
  
-+#if defined(ARM64_BOARD_CONFIG_NABU)
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
 +/*
-+ * NABU has no corecrypto kext (g_crypto_funcs stays NULL). SHA-1 uses
-+ * BearSSL's portable implementation (libkern/crypto/nabu_sha1.c), with
++ * CEPHEUS has no corecrypto kext (g_crypto_funcs stays NULL). SHA-1 uses
++ * BearSSL's portable implementation (libkern/crypto/cepheus_sha1.c), with
 + * SHA1_CTX carrying exactly its state: chaining value, byte count and the
 + * partial block, converted around each call like the corecrypto path does.
 + */
-+#include "nabu_bearssl/inc/bearssl_hash.h"
++#include "cepheus_bearssl/inc/bearssl_hash.h"
 +
 +static void
 +SHA1ToBr(SHA1_CTX *sha1_ctx, br_sha1_context *br_ctx)
@@ -88,7 +88,7 @@
 +	br_sha1_out(&br_ctx, digest);
 +}
 +
-+#else /* !ARM64_BOARD_CONFIG_NABU */
++#else /* !ARM64_BOARD_CONFIG_CEPHEUS */
 +
  /* Copy a ccdigest ctx into a legacy SHA1 context */
  static void
@@ -97,29 +97,29 @@
  	ccdigest_final(di, di_ctx, digest);
  }
  
-+#endif /* !ARM64_BOARD_CONFIG_NABU */
++#endif /* !ARM64_BOARD_CONFIG_CEPHEUS */
 +
  /* This is not publicised in header, but exported in libkern.exports */
  void SHA1Final_r(SHA1_CTX *context, void *digest);
  void
 --- /dev/null
-+++ b/libkern/crypto/nabu_sha1.c
++++ b/libkern/crypto/cepheus_sha1.c
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
-+#if defined(ARM64_BOARD_CONFIG_NABU)
-+#include "nabu_bearssl/src/hash/sha1.c"
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#include "cepheus_bearssl/src/hash/sha1.c"
 +#endif
 --- /dev/null
-+++ b/libkern/crypto/nabu_dec32be.c
++++ b/libkern/crypto/cepheus_dec32be.c
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
-+#if defined(ARM64_BOARD_CONFIG_NABU)
-+#include "nabu_bearssl/src/codec/dec32be.c"
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#include "cepheus_bearssl/src/codec/dec32be.c"
 +#endif
 --- /dev/null
-+++ b/libkern/crypto/nabu_enc32be.c
++++ b/libkern/crypto/cepheus_enc32be.c
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
-+#if defined(ARM64_BOARD_CONFIG_NABU)
-+#include "nabu_bearssl/src/codec/enc32be.c"
++#if defined(ARM64_BOARD_CONFIG_CEPHEUS)
++#include "cepheus_bearssl/src/codec/enc32be.c"
 +#endif
