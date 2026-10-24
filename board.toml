@@ -24,10 +24,9 @@ fetch = ["KernelCache", "DeviceTree", "StaticTrustCache", "Cryptex1,SystemTrustC
          "OS", "Cryptex1,SystemOS"]
 
 [ipsw.sha256]
-# TODO: 下面两个 sha256 抄自 nabu 的 17.7.11 IPSW，沿用同一 IPSW 时无需改动；
-# 若换 IPSW，用 7z/提取工具输出的校验值更新。
+# 沿用 nabu 同款 17.7.11 IPSW，校验值与 nabu 一致；换 IPSW 时必须重算。
 "044-76040-038.dmg" = "3f99b859c9728379110b66657c7b15285bcb1925ad8b5726542e2cdcf8b1028d"
-"044-76034-038.dmg" = "b4c5513e2df9369895d21fd8b5726542e2cdcf8b1028d044-76034-PLACEHOLDER"
+"044-76034-038.dmg" = "b4908cde41d23e6bc05e6af51a2c9eeb00cf0f863a6a18b1600c96a3fd70414f"
 
 [kernel]
 defconfig = "cepheus_defconfig"
@@ -59,10 +58,9 @@ owned_memory_size = "0x20000000"
 dram_size = "0x180000000"          # TODO_MEASURE（6GB 起步占位）
 cpu_regs = "0,0x100,0x200,0x300,0x400,0x500,0x600,0x700"
 packed_data_ramdisk = true
-# TODO_MEASURE: 从所选 IPSW 的 OS dmg 里读 OS 卷的 vol_uuid：
-#   7z l -slt <OS>.dmg | grep vol_uuid
-# nabu 的值（04769d26-...）只对它那份 IPSW 有效，换 IPSW 就要重读。
-root_match_volume_uuid = "TODO_MEASURE-OS-volume-uuid"
+# OS 卷 vol_uuid：与 nabu 同一 IPSW（044-76040-038.dmg），值相同；
+# 换 IPSW 时用 `7z l -slt <OS>.dmg | grep vol_uuid` 重读。
+root_match_volume_uuid = "04769d26-2ca0-4825-b443-e2e5f88300f2"
 ipad_identity = true
 unique_chip_id = false
 
@@ -81,10 +79,11 @@ windows = [
 ]
 
 [kernel.prelink]
-# 注意：kernelcache_sha256 每次内核构建后变化，首次构建成功后用产物重算填入。
+# kernelcache_sha256 是所选 IPSW 内 kernelcache 的校验 pin（ipsw fetch 时校验），
+# 不是我们构建产物的哈希。nabu 用同一 IPSW，值相同；换 IPSW 必须重算。
 tool = "kits/NativePrelink/emit_prelink.py"
 kernel = "build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837.unstripped.noctf"
-kernelcache_sha256 = "TODO_AFTER_FIRST_BUILD"
+kernelcache_sha256 = "f18b4df865405f2a287b84977d7aca745e056d656d9fc9df1662970ce2969de7"
 slide = "-0x1000000"
 early_security_init = "com.apple.driver.AppleMobileFileIntegrity=0xfffffff005ab4ae0"
 roots = [
