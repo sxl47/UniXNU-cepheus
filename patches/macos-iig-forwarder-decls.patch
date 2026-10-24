@@ -1,9 +1,7 @@
+diff --git a/iokit/IOKit/IOService.h b/iokit/IOKit/IOService.h
 --- a/iokit/IOKit/IOService.h
 +++ b/iokit/IOKit/IOService.h
-@@ -398,14 +398,30 @@
- struct IOInterruptAccountingData;
- struct IOInterruptAccountingReporter;
- struct OSObjectUserVars;
+@@ -401,6 +401,13 @@ struct OSObjectUserVars;
  struct IOServiceStateChangeVars;
  struct IOInterruptSourcePrivate;
  
@@ -17,17 +15,24 @@
  class IOService : public IORegistryEntry
  {
  	OSDeclareDefaultStructorsWithDispatch(IOService);
+diff --git a/iokit/Kernel/IOUserServer.cpp b/iokit/Kernel/IOUserServer.cpp
+--- a/iokit/Kernel/IOUserServer.cpp
++++ b/iokit/Kernel/IOUserServer.cpp
+@@ -663,13 +663,15 @@ IOService::SendIOMessageServicePropertyChange_Impl(void)
+  * definitions, so spell out the ones the kernel actually calls.
+  */
+ kern_return_t
+-IOService::UserSetProperties(OSContainer * properties)
++IOService::UserSetProperties(OSContainer * properties,
++    OSDispatchMethod supermethod)
+ {
+ 	return UserSetProperties_Impl(properties);
+ }
  
-+#if PRIVATE_WIFI_ONLY
-+public:
-+	/* macOS CI: Apple's iig does not declare the forwarders that
-+	 * iig-method-forwarders.patch defines in IOUserServer.cpp; the
-+	 * Linux iig shim generates these declarations instead. */
-+	kern_return_t UserSetProperties(OSContainer * properties);
-+	kern_return_t SendIOMessageServicePropertyChange(void);
-+#endif /* PRIVATE_WIFI_ONLY */
-+
- #if XNU_KERNEL_PRIVATE
- public:
- #else
- protected:
+ kern_return_t
+-IOService::SendIOMessageServicePropertyChange(void)
++IOService::SendIOMessageServicePropertyChange(
++    OSDispatchMethod supermethod)
+ {
+ 	return SendIOMessageServicePropertyChange_Impl();
+ }

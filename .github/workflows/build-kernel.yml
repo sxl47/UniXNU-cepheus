@@ -97,13 +97,19 @@ jobs:
         run: cd UniXNU && ./unixnu tree
         timeout-minutes: 30
 
-      - name: Inject macOS iig forwarder declarations patch
-        # Apple's real iig (Xcode 26.6, DriverKit-440) does not declare the
-        # IOService::UserSetProperties / SendIOMessageServicePropertyChange
-        # forwarders that the fork's iig-method-forwarders.patch defines --
-        # on Linux the fork's own iig shim generates them, so nabu's CI never
-        # hit this. The build script's patch loop applies everything in
-        # patches/xnu/ idempotently, so drop ours in alongside.
+      - name: Inject macOS iig signature-compat patch
+        # Xcode 26.6's iig (DriverKit-440) generates the IOService_Methods macro with
+        #   kern_return_t UserSetProperties(OSContainer *, OSDispatchMethod supermethod = NULL);
+        # (same for SendIOMessageServicePropertyChange). The fork's
+        # iig-method-forwarders.patch defines the out-of-line forwarders with the OLD
+        # one-argument signatures, which no longer match any declaration -- exactly the
+        # original "out-of-line definition does not match any declaration" failure.
+        # Adding one-argument declarations (the previous attempt) made both candidates
+        # viable at the IOUserClient.cpp call site and produced "call to member function
+        # 'UserSetProperties' is ambiguous" instead. Fix: keep the iig-generated
+        # declarations, re-sign the fork's definitions to the two-argument form.
+        # The build script's patch loop applies everything in patches/xnu/ idempotently,
+        # so drop ours in alongside (applies after the fork's own patch).
         run: |
           cd UniXNU/out/cepheus/tree
           cp "$GITHUB_WORKSPACE/patches/macos-iig-forwarder-decls.patch" \
