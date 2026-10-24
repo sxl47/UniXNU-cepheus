@@ -73,6 +73,22 @@ jobs:
         run: cd UniXNU && ./unixnu fetch
         timeout-minutes: 60
 
+      # `unixnu ipsw fetch` never downloads the whole ~8GB IPSW: it reads the zip
+      # directory and the needed members (OS dmg volumes, kernelcache) over HTTP
+      # range requests, caching them under out/ipsw/<build>/. The range-request
+      # round-trips are what make this step slow; caching the extracted members
+      # turns it into a no-op when the pinned IPSW has not changed.
+      # Bump the key whenever board.toml [ipsw] pins change. Repo cache budget is
+      # 10GB total: this entry (a few GB of dmg volumes) and the object cache are
+      # both touched every run, so LRU should keep both warm.
+      - name: Restore IPSW member cache
+        uses: actions/cache@v4
+        with:
+          path: UniXNU/out/ipsw
+          key: ipsw-ipados-17.7.11-21H461
+          restore-keys: |
+            ipsw-
+
       - name: Fetch IPSW
         run: cd UniXNU && ./unixnu ipsw fetch
         timeout-minutes: 60
