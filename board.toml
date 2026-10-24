@@ -51,11 +51,11 @@ archives = [
 # dram_size。nabu 的 fbcon reg=<0x9C000000 0xC00000> 是 nabu 面板 framebuffer
 # 的地址，小米 9 的必须从设备树实测（TODO_MEASURE）。
 tool = "scripts/make-cepheus-adt.py"
-# TODO_MEASURE: 小米 9 有 6GB/8GB 两版。nabu 警告：dram_size 照抄别的机器
-# 会让高地址内存对 Darwin 不可见。用 TWRP `cat /proc/meminfo` 实测：
-#   6GB 版起步值: 0x180000000   8GB 版起步值: 0x200000000（按 MemTotal 校准）
+# 实测 2026-10-24（TWRP）：/proc/meminfo MemTotal = 5637008 kB ≈ 5.38 GiB，
+# 扣除 modem/hyp/rmtfs 预留后物理内存为 6GB 变体 => dram_size = 0x180000000，
+# 与 CI ADT 已用的占位值一致（fbcon reg 仍待 UEFI 引导实测）。
 owned_memory_size = "0x20000000"
-dram_size = "0x180000000"          # TODO_MEASURE（6GB 起步占位）
+dram_size = "0x180000000"          # 实测 2026-10-24：6GB 变体
 cpu_regs = "0,0x100,0x200,0x300,0x400,0x500,0x600,0x700"
 packed_data_ramdisk = true
 # OS 卷 vol_uuid：与 nabu 同一 IPSW（044-76040-038.dmg），值相同；
@@ -65,13 +65,14 @@ ipad_identity = true
 unique_chip_id = false
 
 [userdata]
-# TODO_MEASURE —— raphael 的值（同 SoC 不同机型）仅供参考，小米 9 必须实测：
-#   TWRP: /sys/block/sda/sdaXX(userdata) 的 start/size（512B 扇区）
-#   first_lba = start / 8, last_lba = first_lba + size/8 - 1（UFS LBA 4096 字节）
-#   交叉验证: fastboot partition-size:userdata
-# raphael (113GB UFS): first 0x7C000 / last 0x1C457FA —— 不是小米 9 的值！
-first_lba  = 0x0000000             # TODO_MEASURE
-last_lba   = 0x0000000             # TODO_MEASURE
+# 实测 2026-10-24（TWRP，BL 解锁后）：
+#   /dev/block/bootdevice/by-name/userdata -> /dev/block/sda31
+#   /sys/block/sda/sda31/start = 4063232 sectors(512B) -> /8 = 507904 = 0x7C000 (4K LBA)
+#   /sys/block/sda/sda31/size  = 233177048 sectors(512B) -> /8 = 29147131
+#   last_lba = 507904 + 29147131 - 1 = 29655034 = 0x1C47FFA
+#   (分区约 111.2 GiB，与 128GB 机型一致；待用 fastboot getvar partition-size:userdata 交叉验证)
+first_lba  = 0x7C000               # 实测 2026-10-24
+last_lba   = 0x1C47FFA             # 实测 2026-10-24
 lba_bytes = 4096
 windows = [
   { name = "OS", component = "OS" },
