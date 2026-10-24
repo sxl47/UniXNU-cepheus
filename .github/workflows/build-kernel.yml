@@ -79,6 +79,10 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+
+          # 1. userdata.py: HOST = sys.platform is 'darwin' (lowercase) on macOS, but every
+          #    branch tests HOST == 'Darwin'. All the documented hdiutil paths were dead on
+          #    macOS and the build fell through to the Linux 7z path.
           p = Path('UniXNU/scripts/unixnu/userdata.py')
           s = p.read_text()
           assert "HOST = sys.platform" in s, "userdata.py HOST line not found"
@@ -89,8 +93,25 @@ jobs:
           )
           p.write_text(s)
           print("patched:", p)
+
+          # 2. udif.py: hardcodes '/usr/bin/lzfse', which lives under SIP on macOS. Route it
+          #    through LZFSE_BIN so the brew-installed decoder can be selected from PATH.
+          p = Path('UniXNU/scripts/unixnu/udif.py')
+          s = p.read_text()
+          assert "'/usr/bin/lzfse'" in s, "udif.py lzfse path not found"
+          if "import os" not in s:
+              s = s.replace("import struct\nimport subprocess",
+                            "import os\nimport struct\nimport subprocess", 1)
+          s = s.replace(
+              "'/usr/bin/lzfse'",
+              "os.environ.get('LZFSE_BIN', '/usr/bin/lzfse')",
+              1,
+          )
+          p.write_text(s)
+          print("patched:", p)
           PY
           grep -n "HOST = sys.platform" UniXNU/scripts/unixnu/userdata.py
+          grep -n "LZFSE_BIN" UniXNU/scripts/unixnu/udif.py
 
       - name: Select defconfig
         run: |
@@ -127,33 +148,9 @@ jobs:
       # ext4/f2fs, so no IOMedia carries the OS volume UUID that
       # /chosen/root-matching selects. This step packs the unchanged OS and
       # Cryptex1,SystemOS disk images from the cached IPSW behind a SHNGROOT
-      # manifest, exactly as docs/guide/userdata.md prescribes. It needs hdiutil
-      # (macOS-only), which is why it lives in CI rather than the Windows box.
-      - name: Build userdata image
-        if: always()
-        run: |
-          cd UniXNU
-          echo '=== dry run ==='
-          ./unixnu build userdata --dry-run || true
-          echo '=== real build ==='
-          ./unixnu build userdata
-          ls -lh out/cepheus/userdata/ 2>/dev/null || true
-          cat out/cepheus/userdata/userdata-root.json 2>/dev/null | head -60 || true
-        timeout-minutes: 90
-
-      # The raw image is mostly unallocated zeros (the OS/SystemOS disk images
-      # carry a few GB of content on a much larger volume), so deflate shrinks
-      # it hard; the user extracts it before `fastboot flash userdata`.
-      - name: Zip userdata image
-        if: always()
-        run: |
-          if [ -f UniXNU/out/cepheus/userdata/userdata-root.img ]; then
-            cd UniXNU/out/cepheus/userdata
-            zip -q "$GITHUB_WORKSPACE/userdata-cepheus.zip" userdata-root.img userdata-root.json
-            ls -lh "$GITHUB_WORKSPACE/userdata-cepheus.zip"
-          else
-            echo "no userdata-root.img produced"
-          fi
+      # manifest, exactly as docs/guide/userdata.md prescribes. It lives at the
+      # END of the job (see below) so it can never block the kernel chain:
+      # round 16 let a userdata failure skip "Build kernel" entirely.
 
       - name: Assemble tree
         run: cd UniXNU && ./unixnu tree
@@ -400,6 +397,43 @@ jobs:
             xcrun llvm-nm --defined-only "$k" 2>/dev/null | grep -i cepheus_mark || echo "    (no cepheus_mark symbol)"
           done < <(find UniXNU/out/cepheus/kernel -name '*.macho' 2>/dev/null | head -5)
           [ "$found" = 1 ] || echo "(no mach-o in UniXNU/out/cepheus/kernel)"
+
+      # Stage 6 (storage and root): see the comment above "Assemble tree".
+      # Deliberately the LAST build step so a failure here can never skip the
+      # kernel chain (round 16). The dmg needs lzfse decompression
+      # (udif.py blocks of type 0x80000007); brew's decoder is selected
+      # through LZFSE_BIN because udif.py's default /usr/bin path is
+      # SIP-protected on macOS.
+      - name: Build userdata image
+        if: always()
+        run: |
+          brew install lzfse
+          LZ=$(command -v lzfse || ls /opt/homebrew/opt/lzfse/bin/lzfse /usr/local/opt/lzfse/bin/lzfse 2>/dev/null | head -1)
+          echo "lzfse decoder: $LZ"
+          [ -n "$LZ" ] && [ -x "$LZ" ]
+          export LZFSE_BIN="$LZ"
+          cd UniXNU
+          echo '=== dry run ==='
+          ./unixnu build userdata --dry-run || true
+          echo '=== real build ==='
+          ./unixnu build userdata
+          ls -lh out/cepheus/userdata/ 2>/dev/null || true
+          cat out/cepheus/userdata/userdata-root.json 2>/dev/null | head -60 || true
+        timeout-minutes: 120
+
+      # The raw image is mostly unallocated zeros (the OS/SystemOS disk images
+      # carry a few GB of content on a much larger volume), so deflate shrinks
+      # it hard; the user extracts it before `fastboot flash userdata`.
+      - name: Zip userdata image
+        if: always()
+        run: |
+          if [ -f UniXNU/out/cepheus/userdata/userdata-root.img ]; then
+            cd UniXNU/out/cepheus/userdata
+            zip -q "$GITHUB_WORKSPACE/userdata-cepheus.zip" userdata-root.img userdata-root.json
+            ls -lh "$GITHUB_WORKSPACE/userdata-cepheus.zip"
+          else
+            echo "no userdata-root.img produced"
+          fi
 
       - name: Dump build log on failure
         if: failure()
