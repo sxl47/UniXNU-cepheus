@@ -279,7 +279,7 @@ jobs:
       - name: Build cust payload image
         if: always()
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq mtools dosfstools
+          brew install mtools dosfstools
           K=UniXNU/out/cepheus/kernel/kernel.macho
           A=UniXNU/out/cepheus/payload/stage/EFI/UniXNU/Payloads/kernel.macho.adt
           if [ -f "$K" ] && [ -f "$A" ]; then
