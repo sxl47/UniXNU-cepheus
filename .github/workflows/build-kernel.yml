@@ -16,6 +16,13 @@ jobs:
       # Build the read-only register probe in its place so the kernel links and reports what the
       # GCC and UFSHCI windows actually read.
       XNU_NABU_UFS_REGISTER_PROBE: "1"
+      # Xcode 26.6's MacOSX26.5.sdk dropped usr/include/compat/hostcompat.h, so the Linux
+      # host-compat shim injected by Lux12138's linux-host-tools.patch
+      # (HOST_COMPAT_CFLAGS ?= -include .../compat/hostcompat.h) fails to compile SETUP tools.
+      # On macOS getprogname/strlcpy/strlcat are native libSystem calls, so the shim is not
+      # needed; the makefile uses ?=, so defining these in the environment overrides it.
+      HOST_COMPAT_CFLAGS: ""
+      HOST_COMPAT_LIBS: ""
     steps:
       - uses: actions/checkout@v4
 

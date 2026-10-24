@@ -60,3 +60,15 @@ dmesg | grep -i "mdss\|framebuffer\|s6e3fc"
 - `0060~0063`（触摸驱动）：小米 9 触控 IC 与 nabu（NT36672?）不同，需要按 cepheus 设备树改
 - `0061-nabu-iphone-x-display-size.patch`：分辨率适配
 - UFS/USB/PMIC 大概率通用，先不动
+
+## 6. 来自 nabu fork 最新实战的结论（2026-10-24）
+
+- nabu 当前的卡点是 execve 后 panic，已定位：ADT 缺 maxmem（owned memory 上限）导致
+  vm 页计数虚大 116 倍（freepg=91,199,444 页 ≈ 373GB），页分配必炸。
+  修复 = ADT 注入 maxmem=4864（等于 owned_memory_size）。
+  → **对 cepheus 的含义：实测出 dram_size / owned_memory_size 后，
+  maxmem 必须等于 owned_memory_size（6GB 机约 6144 减保留区，以实测为准）。**
+  CI 克隆的是 fork 最新代码，该修复已包含；本地 repos/UniXNU-nabu-fork 落后了，
+  需要时 `git -C repos/UniXNU-nabu-fork pull` 同步。
+- fork 全靠本地 WSL 构建，其 CI workflow 在新 runner 镜像上没有维护——
+  我们踩的 hostcompat 坑是首发，修法见 build-kernel.yml 的 HOST_COMPAT_CFLAGS 注释。
