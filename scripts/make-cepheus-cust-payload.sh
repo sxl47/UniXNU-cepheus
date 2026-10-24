@@ -19,7 +19,14 @@ export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin
 K="${1:?kernel.macho}"
 A="${2:?kernel.macho.adt}"
 OUT="${3:-cust-payload.img}"
-OUT_ABS=$(readlink -f "$OUT")
+# Round 14: BSD readlink -f (macOS) refuses to resolve a path whose final
+# component does not exist yet -- and $OUT is created later by dd. GNU
+# readlink tolerates that, BSD does not, and set -e killed the script on the
+# empty result. Resolve with plain $PWD instead; no readlink involved.
+case "$OUT" in
+  /*) OUT_ABS="$OUT" ;;
+  *)  OUT_ABS="$PWD/$OUT" ;;
+esac
 
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
