@@ -99,6 +99,39 @@ jobs:
         run: cd UniXNU && ./unixnu ipsw fetch
         timeout-minutes: 60
 
+      # Stage 6 (storage and root): the "failed to mount root device" panic from
+      # device round 4 is expected -- the userdata partition still holds Android
+      # ext4/f2fs, so no IOMedia carries the OS volume UUID that
+      # /chosen/root-matching selects. This step packs the unchanged OS and
+      # Cryptex1,SystemOS disk images from the cached IPSW behind a SHNGROOT
+      # manifest, exactly as docs/guide/userdata.md prescribes. It needs hdiutil
+      # (macOS-only), which is why it lives in CI rather than the Windows box.
+      - name: Build userdata image
+        if: always()
+        run: |
+          cd UniXNU
+          echo '=== dry run ==='
+          ./unixnu build userdata --dry-run || true
+          echo '=== real build ==='
+          ./unixnu build userdata
+          ls -lh out/cepheus/userdata/ 2>/dev/null || true
+          cat out/cepheus/userdata/userdata-root.json 2>/dev/null | head -60 || true
+        timeout-minutes: 90
+
+      # The raw image is mostly unallocated zeros (the OS/SystemOS disk images
+      # carry a few GB of content on a much larger volume), so deflate shrinks
+      # it hard; the user extracts it before `fastboot flash userdata`.
+      - name: Zip userdata image
+        if: always()
+        run: |
+          if [ -f UniXNU/out/cepheus/userdata/userdata-root.img ]; then
+            cd UniXNU/out/cepheus/userdata
+            zip -q "$GITHUB_WORKSPACE/userdata-cepheus.zip" userdata-root.img userdata-root.json
+            ls -lh "$GITHUB_WORKSPACE/userdata-cepheus.zip"
+          else
+            echo "no userdata-root.img produced"
+          fi
+
       - name: Assemble tree
         run: cd UniXNU && ./unixnu tree
         timeout-minutes: 30
@@ -382,6 +415,7 @@ jobs:
             UniXNU/out/cepheus/logs/
             cust-payload.img
             kernel.macho.adt
+            userdata-cepheus.zip
           if-no-files-found: warn
 
 

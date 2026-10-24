@@ -78,7 +78,7 @@ version = 1
 # forever as soon as any input device is detected -- the menu then needs
 # manual selection that is impossible without keys. Direct boot + a short
 # fallback keeps unattended bring-up loops moving.
-timeout = 0
+timeout = 3
 fallback_timeout = 5
 default = "xnu"
 
