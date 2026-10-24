@@ -23,6 +23,12 @@ jobs:
       # needed; the makefile uses ?=, so defining these in the environment overrides it.
       HOST_COMPAT_CFLAGS: ""
       HOST_COMPAT_LIBS: ""
+      # Lux12138's fork recently added a NativeDwc3 (USB) bring-up series and flipped
+      # the XNU_NATIVE_DWC3 gate default to 1, making the baseline script require
+      # build/native-dwc3/libNativeDwc3.a. cepheus bring-up does not need USB yet;
+      # pin the gate to 0 to restore the previous behaviour while still tracking
+      # the fork's other fixes (panic restart, header fixes).
+      XNU_NATIVE_DWC3: "0"
     steps:
       - uses: actions/checkout@v4
 
