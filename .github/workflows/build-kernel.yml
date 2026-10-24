@@ -279,7 +279,11 @@ jobs:
       - name: Build cust payload image
         if: always()
         run: |
-          brew install mtools dosfstools
+          # brew occasionally exits 1 during its cleanup phase after the bottles
+          # are already poured; judge success by the binaries, not the exit code.
+          brew install mtools dosfstools || brew install mtools dosfstools
+          command -v mcopy
+          command -v mkfs.vfat
           K=UniXNU/out/cepheus/kernel/kernel.macho
           A=UniXNU/out/cepheus/payload/stage/EFI/UniXNU/Payloads/kernel.macho.adt
           if [ -f "$K" ] && [ -f "$A" ]; then
