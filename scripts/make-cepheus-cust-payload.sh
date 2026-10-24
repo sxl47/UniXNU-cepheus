@@ -10,6 +10,12 @@
 #
 # Usage: bash make-cepheus-cust-payload.sh <kernel.macho> <kernel.macho.adt> [output.img]
 set -e
+# Round 13 died silently inside this script on macOS: BSD dd rejects the GNU
+# `status=none` operand (macOS runner), which set -e turns into a bare exit 1
+# before the first echo. Trace everything, and keep brew's keg-only sbin
+# (mkfs.vfat) on PATH for every step.
+set -x
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$PATH"
 K="${1:?kernel.macho}"
 A="${2:?kernel.macho.adt}"
 OUT="${3:-cust-payload.img}"
@@ -28,7 +34,7 @@ cp "$A" "$STAGE/EFI/UniXNU/Payloads/kernel.macho.adt"
 # so its RAMDisk placeholder matches this empty image.
 RAMDISK="$STAGE/EFI/UniXNU/Payloads/ramdisk.img"
 if [ ! -f "$RAMDISK" ]; then
-  dd if=/dev/zero of="$RAMDISK" bs=1M count=4 status=none
+  dd if=/dev/zero of="$RAMDISK" bs=1048576 count=4 2>/dev/null
   if command -v mkfs.vfat >/dev/null 2>&1; then
     mkfs.vfat -F 16 -n CEPHRD "$RAMDISK" >/dev/null 2>&1 || true
   fi
@@ -71,7 +77,7 @@ args = "-v serial=3 debug=0x14e kextlog=0xfff kt_fixed_zones=120 -no_slto_panic 
 TOML
 
 rm -f "$OUT"
-dd if=/dev/zero of="$OUT" bs=1M count=64 status=none
+dd if=/dev/zero of="$OUT" bs=1048576 count=64 2>/dev/null
 mkfs.vfat -F 16 -n CEPHCUST "$OUT" > /dev/null
 ( cd "$STAGE" && mcopy -i "$OUT_ABS" -s EFI ::/ )
 
