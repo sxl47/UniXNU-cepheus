@@ -69,6 +69,29 @@ jobs:
           # wrong and mig_init() trips. This snapshot is the tree the kernel actually builds on.
           git clone --recurse-submodules --depth 1 --shallow-submodules https://github.com/Lux12138/UniXNU.git UniXNU
 
+      - name: Patch userdata.py platform detection
+        # userdata.py does HOST = sys.platform, which is 'darwin' (lowercase) on macOS, but every
+        # branch tests HOST == 'Darwin'. All the documented hdiutil paths (imageinfo, attach
+        # -nomount, rdisk read) were therefore dead on macOS and the build fell through to the
+        # Linux 7z path -- where the runner's 7z cannot see the APFS member inside the UDIF dmg
+        # ("7z reported no APFS member"). capitalize() turns 'darwin' into 'Darwin' and 'linux'
+        # into 'Linux', which restores the intended host selection on both platforms.
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('UniXNU/scripts/unixnu/userdata.py')
+          s = p.read_text()
+          assert "HOST = sys.platform" in s, "userdata.py HOST line not found"
+          s = s.replace(
+              "HOST = sys.platform",
+              "HOST = sys.platform.capitalize()  # 'darwin'->'Darwin': engage the hdiutil paths on macOS",
+              1,
+          )
+          p.write_text(s)
+          print("patched:", p)
+          PY
+          grep -n "HOST = sys.platform" UniXNU/scripts/unixnu/userdata.py
+
       - name: Select defconfig
         run: |
           cd UniXNU
