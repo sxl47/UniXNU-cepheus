@@ -1,0 +1,30 @@
+--- a/iokit/IOKit/IOService.h
++++ b/iokit/IOKit/IOService.h
+@@ -398,14 +398,27 @@
+ struct IOInterruptAccountingData;
+ struct IOInterruptAccountingReporter;
+ struct OSObjectUserVars;
+ struct IOServiceStateChangeVars;
+ struct IOInterruptSourcePrivate;
+ 
++#if PRIVATE_WIFI_ONLY
++class OSContainer;
++#endif /* PRIVATE_WIFI_ONLY */
++
+ class IOService : public IORegistryEntry
+ {
+ 	OSDeclareDefaultStructorsWithDispatch(IOService);
+ 
++#if PRIVATE_WIFI_ONLY
++public:
++	/* macOS CI: Apple's iig does not declare the forwarders that
++	 * iig-method-forwarders.patch defines in IOUserServer.cpp; the
++	 * Linux iig shim generates these declarations instead. */
++	kern_return_t UserSetProperties(OSContainer * properties);
++	kern_return_t SendIOMessageServicePropertyChange(void);
++#endif /* PRIVATE_WIFI_ONLY */
++
+ #if XNU_KERNEL_PRIVATE
+ public:
+ #else
+ protected:

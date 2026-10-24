@@ -81,6 +81,25 @@ jobs:
         run: cd UniXNU && ./unixnu tree
         timeout-minutes: 30
 
+      - name: Inject macOS iig forwarder declarations patch
+        # Apple's real iig (Xcode 26.6, DriverKit-440) does not declare the
+        # IOService::UserSetProperties / SendIOMessageServicePropertyChange
+        # forwarders that the fork's iig-method-forwarders.patch defines --
+        # on Linux the fork's own iig shim generates them, so nabu's CI never
+        # hit this. The build script's patch loop applies everything in
+        # patches/xnu/ idempotently, so drop ours in alongside.
+        run: |
+          cd UniXNU/out/cepheus/tree
+          cp "$GITHUB_WORKSPACE/patches/macos-iig-forwarder-decls.patch" \
+             patches/xnu/y00-macos-iig-forwarder-decls.patch
+          if [ -d .cache/xnu-work ]; then
+            git -C .cache/xnu-work apply --check patches/xnu/y00-macos-iig-forwarder-decls.patch \
+              && echo "patch will apply cleanly" \
+              || echo "(xnu-work not fetched yet; the build script's patch loop will apply it)"
+          else
+            echo "(no xnu-work yet; patch loop will apply it)"
+          fi
+
       - name: Inject GITHUB_TOKEN into API scripts
         run: |
           cd UniXNU/out/cepheus/tree
