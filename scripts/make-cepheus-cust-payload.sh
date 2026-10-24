@@ -63,7 +63,13 @@ cat > "$STAGE/EFI/UniXNU/unixnu.toml" <<'TOML'
 version = 1
 
 [boot]
-timeout = 5
+# 0 = boot the default entry at once. The phone has no keyboard, and after
+# one failed boot attempt Menu.c re-runs with Countdown=FALSE, which waits
+# forever as soon as any input device is detected -- the menu then needs
+# manual selection that is impossible without keys. Direct boot + a short
+# fallback keeps unattended bring-up loops moving.
+timeout = 0
+fallback_timeout = 5
 default = "xnu"
 
 [kits]
