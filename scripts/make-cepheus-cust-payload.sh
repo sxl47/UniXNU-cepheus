@@ -34,6 +34,16 @@ mkdir -p "$STAGE/EFI/UniXNU/Payloads"
 cp "$K" "$STAGE/EFI/UniXNU/Payloads/kernel.macho"
 cp "$A" "$STAGE/EFI/UniXNU/Payloads/kernel.macho.adt"
 
+# DarwinBoot refuses to boot (EFI_COMPROMISED_DATA, shown as "Compromised
+# Data" on the menu) when the entry supplies an initrd but the ADT's
+# /chosen/memory-map has no RAMDisk placeholder. The payload pipeline's ADT
+# does not include one, so insert it here before packing the volume.
+python3 "$(dirname "$0")/adt-add-ramdisk.py" \
+  "$STAGE/EFI/UniXNU/Payloads/kernel.macho.adt" \
+  "$STAGE/EFI/UniXNU/Payloads/kernel.macho.adt.new"
+mv "$STAGE/EFI/UniXNU/Payloads/kernel.macho.adt.new" \
+   "$STAGE/EFI/UniXNU/Payloads/kernel.macho.adt"
+
 # A 4 MiB RAM disk: mockfs_mountroot needs a root vnode answering
 # DKIOCGETMEMDEVINFO, and IOMedia only appears for a real device. Contents can
 # stay empty for bring-up -- init will fail to find /sbin/launchd afterwards,
