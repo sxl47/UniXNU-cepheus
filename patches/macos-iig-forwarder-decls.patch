@@ -1,6 +1,6 @@
 --- a/iokit/IOKit/IOService.h
 +++ b/iokit/IOKit/IOService.h
-@@ -398,14 +398,27 @@
+@@ -398,14 +398,30 @@
  struct IOInterruptAccountingData;
  struct IOInterruptAccountingReporter;
  struct OSObjectUserVars;
@@ -8,7 +8,10 @@
  struct IOInterruptSourcePrivate;
  
 +#if PRIVATE_WIFI_ONLY
-+class OSContainer;
++/* OSObject.iig:127 -- OSContainer is a typedef of OSObject; identical
++ * typedef redeclaration is legal in C++, so this is safe whether or
++ * not the iig-generated header was included first. */
++typedef OSObject OSContainer;
 +#endif /* PRIVATE_WIFI_ONLY */
 +
  class IOService : public IORegistryEntry
