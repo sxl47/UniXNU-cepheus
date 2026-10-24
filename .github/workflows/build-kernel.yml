@@ -288,6 +288,9 @@ jobs:
           echo "===== bootstrap errors (full file scan) ====="
           grep -a -nE 'error:|Error [0-9]|\*\*\*|undefined symbol|No such file|cannot find' \
             UniXNU/out/cepheus/logs/kernel-bootstrap.log 2>/dev/null | head -25 || echo "(no error lines)"
+          echo "===== overload ambiguity candidates (clang notes) ====="
+          grep -a -B2 -A30 "is ambiguous" \
+            UniXNU/out/cepheus/logs/kernel-bootstrap.log 2>/dev/null | head -120 || echo "(no ambiguity)"
           echo "===== bootstrap log size / tail of make output ====="
           wc -l UniXNU/out/cepheus/logs/kernel-bootstrap.log 2>/dev/null
           grep -a -nE 'make(\[[0-9]\])?:' UniXNU/out/cepheus/logs/kernel-bootstrap.log 2>/dev/null | tail -10
