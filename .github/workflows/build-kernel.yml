@@ -263,6 +263,18 @@ jobs:
       # writing unixnu.toml, mcopy-ing a FAT volume). `build payload` does all of that from
       # board.toml: it generates the ADT, writes the config, and lays out the volume at
       # [payload] size_mib with the volume label.
+      - name: Install mtools/dosfstools
+        if: always()
+        run: |
+          # unixnu build payload itself needs mformat/mcopy for the FAT volume,
+          # so this must run BEFORE "Build payload", not only before the cust
+          # image step. brew occasionally exits 1 during its cleanup phase
+          # after the bottles are already poured; judge success by the
+          # binaries, not the exit code.
+          brew install mtools dosfstools || brew install mtools dosfstools
+          command -v mcopy
+          command -v mkfs.vfat
+
       - name: Build payload
         if: always()
         run: |
@@ -279,13 +291,11 @@ jobs:
       - name: Build cust payload image
         if: always()
         run: |
-          # brew occasionally exits 1 during its cleanup phase after the bottles
-          # are already poured; judge success by the binaries, not the exit code.
-          brew install mtools dosfstools || brew install mtools dosfstools
-          command -v mcopy
-          command -v mkfs.vfat
+          set -x
+          # mtools/dosfstools are installed by the dedicated step above.
           K=UniXNU/out/cepheus/kernel/kernel.macho
           A=UniXNU/out/cepheus/payload/stage/EFI/UniXNU/Payloads/kernel.macho.adt
+          ls -lh "$K" "$A"
           if [ -f "$K" ] && [ -f "$A" ]; then
             bash scripts/make-cepheus-cust-payload.sh "$K" "$A" cust-payload.img
             ls -lh cust-payload.img
