@@ -97,19 +97,21 @@ jobs:
         run: cd UniXNU && ./unixnu tree
         timeout-minutes: 30
 
-      - name: Inject macOS iig signature-compat patch
-        # Xcode 26.6's iig (DriverKit-440) generates the IOService_Methods macro with
-        #   kern_return_t UserSetProperties(OSContainer *, OSDispatchMethod supermethod = NULL);
-        # (same for SendIOMessageServicePropertyChange). The fork's
-        # iig-method-forwarders.patch defines the out-of-line forwarders with the OLD
-        # one-argument signatures, which no longer match any declaration -- exactly the
-        # original "out-of-line definition does not match any declaration" failure.
-        # Adding one-argument declarations (the previous attempt) made both candidates
-        # viable at the IOUserClient.cpp call site and produced "call to member function
-        # 'UserSetProperties' is ambiguous" instead. Fix: keep the iig-generated
-        # declarations, re-sign the fork's definitions to the two-argument form.
-        # The build script's patch loop applies everything in patches/xnu/ idempotently,
-        # so drop ours in alongside (applies after the fork's own patch).
+      - name: Inject macOS iig compat patch
+        # History of this patch (three CI rounds):
+        # v1: hand-wrote one-arg forwarder declarations -> ambiguous overloads.
+        # v2: re-signed the fork's definitions to two args -> compile passed, but
+        #     the link then failed with 3 duplicate symbols: Xcode 26.6's iig
+        #     (DriverKit-440) now compiles IOService.iig.cpo / IOUserClient.iig.cpo
+        #     into the kernel, and those objects ALREADY DEFINE
+        #     IOService::UserSetProperties(OSObject*, OSDispatchMethod),
+        #     IOService::SendIOMessageServicePropertyChange(OSDispatchMethod) and
+        #     IOUserClient::CreateActionKernelCompletion(size_t, OSAction**).
+        #     The fork's iig-method-forwarders.patch comment ("the kernel build
+        #     does not compile the generated .iig.cpp") no longer holds.
+        # v3 (current): keep the OSContainer typedef, DELETE the fork's
+        #     out-of-line forwarder definitions (exact inverse of its hunk) and
+        #     let the iig-generated objects provide all three.
         run: |
           cd UniXNU/out/cepheus/tree
           cp "$GITHUB_WORKSPACE/patches/macos-iig-forwarder-decls.patch" \

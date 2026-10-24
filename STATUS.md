@@ -13,10 +13,11 @@
 - [ ] 克隆 Lux12138/UniXNU fork，取 make-nabu-adt.py 做底本 → make-cepheus-adt.py
 - [ ] 真机实测：DRAM / userdata / fbcon 地址（见 TODO-MEASURE.md）
 - [ ] 首轮 CI 内核构建跑通（不需要真机！push 后手动触发 workflow_dispatch）
-      - CI 修复进度：ipsw pin → hostcompat env → iig 声明（v1，方向错误）→
-        **v2（当前）**：Xcode 26.6 的 iig 生成 `UserSetProperties(OSContainer*, OSDispatchMethod = NULL)`
-        两参声明；fork 的 out-of-line 定义重签为两参形式，弃用手写声明（会和生成声明
-        构成歧义重载）。补丁 `patches/macos-iig-forwarder-decls.patch` 仅含
-        IOService.h typedef + IOUserServer.cpp 签名修正。
+      - CI 修复进度：ipsw pin → hostcompat env → iig 声明 v1（歧义）→ v2（重签，
+        链接重复符号）→ **v3（当前）**：Xcode 26.6 的 iig（DriverKit-440）把
+        IOService.iig.cpo / IOUserClient.iig.cpo 编进内核，自带三个前转器定义；
+        删除 fork iig-method-forwarders.patch 的手写定义（精确反向 hunk），
+        保留 IOService.h 的 OSContainer typedef。补丁 =
+        `patches/macos-iig-forwarder-decls.patch`。
 - [ ] UEFI 仓库 `uefi-cepheus`（参照 uefi-sheng + nabu firmware-patches.md）
 - [ ] 阶段 1-7 bring-up（见 ../notes/cepheus-plan.md §5）

@@ -15,24 +15,40 @@ diff --git a/iokit/IOKit/IOService.h b/iokit/IOKit/IOService.h
  class IOService : public IORegistryEntry
  {
  	OSDeclareDefaultStructorsWithDispatch(IOService);
+
 diff --git a/iokit/Kernel/IOUserServer.cpp b/iokit/Kernel/IOUserServer.cpp
 --- a/iokit/Kernel/IOUserServer.cpp
 +++ b/iokit/Kernel/IOUserServer.cpp
-@@ -663,13 +663,15 @@ IOService::SendIOMessageServicePropertyChange_Impl(void)
-  * definitions, so spell out the ones the kernel actually calls.
-  */
- kern_return_t
--IOService::UserSetProperties(OSContainer * properties)
-+IOService::UserSetProperties(OSContainer * properties,
-+    OSDispatchMethod supermethod)
+@@ -655,32 +655,8 @@ IOService::SendIOMessageServicePropertyChange_Impl(void)
  {
- 	return UserSetProperties_Impl(properties);
+ 	return messageClients(kIOMessageServicePropertyChange);
  }
+-
+-/*
+- * Apple's iig emits the DriverKit-facing forwarders and the TYPE(...) OSAction
+- * factories into the generated .iig.cpp, which the kernel build does not
+- * compile. The Linux iig shim generates the declarations but not these
+- * definitions, so spell out the ones the kernel actually calls.
+- */
+-kern_return_t
+-IOService::UserSetProperties(OSContainer * properties)
+-{
+-	return UserSetProperties_Impl(properties);
+-}
+-
+-kern_return_t
+-IOService::SendIOMessageServicePropertyChange(void)
+-{
+-	return SendIOMessageServicePropertyChange_Impl();
+-}
+ #endif /* PRIVATE_WIFI_ONLY */
+ 
+-kern_return_t
+-IOUserClient::CreateActionKernelCompletion(size_t referenceSize, OSAction ** action)
+-{
+-	return OSAction::Create(this, 0, 0, referenceSize, action);
+-}
+-
+ /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
  
  kern_return_t
--IOService::SendIOMessageServicePropertyChange(void)
-+IOService::SendIOMessageServicePropertyChange(
-+    OSDispatchMethod supermethod)
- {
- 	return SendIOMessageServicePropertyChange_Impl();
- }
