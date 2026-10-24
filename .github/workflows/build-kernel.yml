@@ -261,7 +261,11 @@ jobs:
         if: always()
         run: |
           cd UniXNU
-          ./unixnu build payload --unique-chip-id 0x1 || true
+          # No --unique-chip-id here: make-cepheus-adt.py only accepts the pair
+          # (--unique-chip-id + --chip-id), and the payload that boots on nabu
+          # carries NEITHER -- /chosen identifies the platform via arm-io/product.
+          # board.toml [payload] unique_chip_id = false encodes exactly that.
+          ./unixnu build payload || true
           echo '--- payload output ---'
           ls -lh out/cepheus/payload/ 2>/dev/null || echo 'no payload dir'
           find out/cepheus/payload -maxdepth 2 -type f 2>/dev/null | head -20 || true
