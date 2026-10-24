@@ -323,6 +323,7 @@ jobs:
           name: kernel-cepheus
           path: |
             UniXNU/out/cepheus/kernel/
+            UniXNU/out/cepheus/payload/
             UniXNU/out/cepheus/logs/
           if-no-files-found: warn
 
