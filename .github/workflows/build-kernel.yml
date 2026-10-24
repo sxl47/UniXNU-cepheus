@@ -284,23 +284,45 @@ jobs:
           # carries NEITHER -- /chosen identifies the platform via arm-io/product.
           # board.toml [payload] unique_chip_id = false encodes exactly that.
           ./unixnu build payload || true
-          echo '--- payload output ---'
-          ls -lh out/cepheus/payload/ 2>/dev/null || echo 'no payload dir'
-          find out/cepheus/payload -maxdepth 2 -type f 2>/dev/null | head -20 || true
+          echo '--- payload output (recursive) ---'
+          find out/cepheus/payload -type f 2>/dev/null | head -40 || true
+          # The ADT is not reliably left behind in the stage directory (it was
+          # missing in CI round 12), but the FAT payload.img definitely carries
+          # it -- list the volume to prove where things ended up.
+          if [ -f out/cepheus/payload/payload.img ]; then
+            echo '--- payload.img contents ---'
+            mdir -i out/cepheus/payload/payload.img -/ ::/ || true
+          fi
 
+      # Three-tier ADT sourcing, in order of trust:
+      #   1. the stage directory, if `unixnu build payload` left it there
+      #   2. mcopy out of payload.img (same file the pipeline just built)
+      #   3. regenerate from board.toml defaults (dram-size only; the other
+      #      flags match what the pipeline passes for a no-unique-chip-id board)
+      # Never let a bare `ls` of a possibly-missing file kill the step again:
+      # round 12 died on `ls -lh "$K" "$A"` under bash -e before any fallback ran.
       - name: Build cust payload image
         if: always()
         run: |
           set -x
-          # mtools/dosfstools are installed by the dedicated step above.
           K=UniXNU/out/cepheus/kernel/kernel.macho
-          A=UniXNU/out/cepheus/payload/stage/EFI/UniXNU/Payloads/kernel.macho.adt
-          ls -lh "$K" "$A"
+          P=UniXNU/out/cepheus/payload/payload.img
+          S=UniXNU/out/cepheus/payload/stage/EFI/UniXNU/Payloads/kernel.macho.adt
+          A=kernel.macho.adt
+          if [ -f "$S" ]; then
+            cp "$S" "$A"
+          elif [ -f "$P" ]; then
+            mcopy -n -i "$P" ::/EFI/UniXNU/Payloads/kernel.macho.adt "$A"
+          elif [ -f "$K" ]; then
+            echo 'WARNING: no stage ADT and no payload.img; regenerating from board defaults'
+            python3 scripts/make-cepheus-adt.py --output "$A" --dram-size 0x180000000
+          fi
           if [ -f "$K" ] && [ -f "$A" ]; then
             bash scripts/make-cepheus-cust-payload.sh "$K" "$A" cust-payload.img
             ls -lh cust-payload.img
           else
-            echo "SKIP: kernel or ADT missing (K=$K A=$A)"
+            echo "FAIL: kernel or ADT missing (K=$K A=$A P=$P S=$S)"
+            exit 1
           fi
 
       - name: Verify early checkpoint marks
@@ -359,6 +381,7 @@ jobs:
             UniXNU/out/cepheus/payload/
             UniXNU/out/cepheus/logs/
             cust-payload.img
+            kernel.macho.adt
           if-no-files-found: warn
 
 

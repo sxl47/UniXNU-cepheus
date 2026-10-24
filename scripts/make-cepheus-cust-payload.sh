@@ -33,7 +33,7 @@ if [ ! -f "$RAMDISK" ]; then
     mkfs.vfat -F 16 -n CEPHRD "$RAMDISK" >/dev/null 2>&1 || true
   fi
 fi
-echo "ramdisk: $(stat -c %s "$RAMDISK" 2>/dev/null || echo 0) bytes"
+echo "ramdisk: $(stat -f %z "$RAMDISK" 2>/dev/null || stat -c %s "$RAMDISK" 2>/dev/null || echo 0) bytes"
 
 # Boot arguments carried over from the nabu bring-up (same SM8150 platform):
 #   -v serial=3 debug=0x14e   early kernel output
