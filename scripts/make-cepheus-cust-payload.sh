@@ -1,0 +1,82 @@
+#!/bin/bash
+# Build the 64 MiB FAT16 cust-payload image for cepheus:
+#   \EFI\UniXNU\unixnu.toml
+#   \EFI\UniXNU\Payloads\kernel.macho        (XNU kernel, ~51 MiB)
+#   \EFI\UniXNU\Payloads\kernel.macho.adt    (Apple Device Tree)
+#   \EFI\UniXNU\Payloads\ramdisk.img         (empty 4 MiB FAT16 placeholder)
+# UEFI (DarwinBoot) only mounts FAT volumes; Android partitions are ext4/f2fs,
+# so without this image the firmware reports "no system found" and powers off.
+# Flash target: the factory cust partition (expendable, not touched by MIUI boot).
+#
+# Usage: bash make-cepheus-cust-payload.sh <kernel.macho> <kernel.macho.adt> [output.img]
+set -e
+K="${1:?kernel.macho}"
+A="${2:?kernel.macho.adt}"
+OUT="${3:-cust-payload.img}"
+OUT_ABS=$(readlink -f "$OUT")
+
+STAGE=$(mktemp -d)
+trap 'rm -rf "$STAGE"' EXIT
+mkdir -p "$STAGE/EFI/UniXNU/Payloads"
+cp "$K" "$STAGE/EFI/UniXNU/Payloads/kernel.macho"
+cp "$A" "$STAGE/EFI/UniXNU/Payloads/kernel.macho.adt"
+
+# A 4 MiB RAM disk: mockfs_mountroot needs a root vnode answering
+# DKIOCGETMEMDEVINFO, and IOMedia only appears for a real device. Contents can
+# stay empty for bring-up -- init will fail to find /sbin/launchd afterwards,
+# which is the expected next step. The ADT is generated WITHOUT --data-ramdisk
+# so its RAMDisk placeholder matches this empty image.
+RAMDISK="$STAGE/EFI/UniXNU/Payloads/ramdisk.img"
+if [ ! -f "$RAMDISK" ]; then
+  dd if=/dev/zero of="$RAMDISK" bs=1M count=4 status=none
+  if command -v mkfs.vfat >/dev/null 2>&1; then
+    mkfs.vfat -F 16 -n CEPHRD "$RAMDISK" >/dev/null 2>&1 || true
+  fi
+fi
+echo "ramdisk: $(stat -c %s "$RAMDISK" 2>/dev/null || echo 0) bytes"
+
+# Boot arguments carried over from the nabu bring-up (same SM8150 platform):
+#   -v serial=3 debug=0x14e   early kernel output
+#   kextlog=0xfff             verbose kext logging
+#   native-ufs-root=1         publish the UFS block class as the root device
+#   sheng-data-persist=2      wait for store geometry so Data overlay activates
+#   sheng-smp=0               single CPU for bring-up (SMP caused silent resets)
+#   wdt=-1 / sheng-disable-watchdogd=1   keep watchdogs from biting
+#   native-ufs-allow-unverified=1  adopt controller without verified-root bundle
+#   kt_fixed_zones=120        fixed trace zone count, as sheng uses
+#   -no_slto_panic            suppress the SLTO panic
+#   amfi_get_out_of_my_way=1  payload is unsigned (diagnostic boot per docs)
+cat > "$STAGE/EFI/UniXNU/unixnu.toml" <<'TOML'
+version = 1
+
+[boot]
+timeout = 5
+default = "xnu"
+
+[kits]
+autoload = false
+
+[ui]
+title = "UniXNU cepheus"
+logo = true
+console = "auto"
+
+[[entry]]
+id = "xnu"
+title = "XNU (SM8150 UFS)"
+type = "xnu"
+path = "Payloads/kernel.macho"
+initrd = "Payloads/ramdisk.img"
+args = "-v serial=3 debug=0x14e kextlog=0xfff kt_fixed_zones=120 -no_slto_panic amfi_get_out_of_my_way=1 native-ufs-root=1 native-ufs-allow-unverified=1 sheng-data-persist=2 sheng-smp=0 wdt=-1 sheng-disable-watchdogd=1"
+TOML
+
+rm -f "$OUT"
+dd if=/dev/zero of="$OUT" bs=1M count=64 status=none
+mkfs.vfat -F 16 -n CEPHCUST "$OUT" > /dev/null
+( cd "$STAGE" && mcopy -i "$OUT_ABS" -s EFI ::/ )
+
+echo "=== contents verify ==="
+mdir -i "$OUT_ABS" -/ ::/EFI/UniXNU/Payloads
+ls -l "$OUT"
+echo
+echo "flash: fastboot flash cust $OUT"

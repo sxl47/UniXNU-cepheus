@@ -270,6 +270,19 @@ jobs:
           ls -lh out/cepheus/payload/ 2>/dev/null || echo 'no payload dir'
           find out/cepheus/payload -maxdepth 2 -type f 2>/dev/null | head -20 || true
 
+      - name: Build cust payload image
+        if: always()
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq mtools dosfstools
+          K=UniXNU/out/cepheus/kernel/kernel.macho
+          A=UniXNU/out/cepheus/payload/stage/EFI/UniXNU/Payloads/kernel.macho.adt
+          if [ -f "$K" ] && [ -f "$A" ]; then
+            bash scripts/make-cepheus-cust-payload.sh "$K" "$A" cust-payload.img
+            ls -lh cust-payload.img
+          else
+            echo "SKIP: kernel or ADT missing (K=$K A=$A)"
+          fi
+
       - name: Verify early checkpoint marks
         if: always()
         run: |
@@ -325,6 +338,7 @@ jobs:
             UniXNU/out/cepheus/kernel/
             UniXNU/out/cepheus/payload/
             UniXNU/out/cepheus/logs/
+            cust-payload.img
           if-no-files-found: warn
 
 
