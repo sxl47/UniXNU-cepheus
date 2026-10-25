@@ -1160,7 +1160,7 @@ diff --git a/iokit/KernelConfigTables.cpp b/iokit/KernelConfigTables.cpp
 diff --git a/iokit/bsddev/IOKitBSDInit.cpp b/iokit/bsddev/IOKitBSDInit.cpp
 --- a/iokit/bsddev/IOKitBSDInit.cpp
 +++ b/iokit/bsddev/IOKitBSDInit.cpp
-@@ -766,14 +766,17 @@
+@@ -766,14 +766,23 @@
  		}
  	}
  
@@ -1171,7 +1171,14 @@ diff --git a/iokit/bsddev/IOKitBSDInit.cpp b/iokit/bsddev/IOKitBSDInit.cpp
 +//	CEPHEUS/CEPHEUS: root on a GPT partition of the internal UFS
 +//	(bsd/dev/cepheus_ufs.c)
  //
- 	if (strcmp(rdBootVar, "ufsroot0") == 0) {
+-	if (strcmp(rdBootVar, "ufsroot0") == 0) {
++	extern "C" char *PE_boot_args(void);
++	printf("CEPHEUS: IOFindBSDRoot cmdline='%.900s' rdBootVar='%s'\n",
++	    PE_boot_args(), rdBootVar);
++	/* Bring-up fallback: rd=ufsroot0 should arrive via the toml boot args,
++	 * but if the command line is ever lost the UFS root is still the only
++	 * root this board can ever mount (no IOMedia class), so take it. */
++	if ((strcmp(rdBootVar, "ufsroot0") == 0) || (rdBootVar[0] == 0)) {
  		extern int cepheus_ufs_rootdev(dev_t *dev);
 +		IOLog("CEPHEUS: IOFindBSDRoot UFS branch, calling cepheus_ufs_rootdev\n");
  		OSSafeReleaseNULL(matching);
