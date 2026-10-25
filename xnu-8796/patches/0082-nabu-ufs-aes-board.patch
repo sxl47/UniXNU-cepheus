@@ -1039,7 +1039,7 @@ diff --git a/iokit/KernelConfigTables.cpp b/iokit/KernelConfigTables.cpp
 diff --git a/iokit/bsddev/IOKitBSDInit.cpp b/iokit/bsddev/IOKitBSDInit.cpp
 --- a/iokit/bsddev/IOKitBSDInit.cpp
 +++ b/iokit/bsddev/IOKitBSDInit.cpp
-@@ -766,14 +766,23 @@
+@@ -766,14 +766,22 @@
  		}
  	}
  
@@ -1051,7 +1051,6 @@ diff --git a/iokit/bsddev/IOKitBSDInit.cpp b/iokit/bsddev/IOKitBSDInit.cpp
 +//	(bsd/dev/cepheus_ufs.c)
  //
 -	if (strcmp(rdBootVar, "ufsroot0") == 0) {
-+	extern "C" char *PE_boot_args(void);
 +	printf("CEPHEUS: IOFindBSDRoot cmdline='%.900s' rdBootVar='%s'\n",
 +	    PE_boot_args(), rdBootVar);
 +	/* Bring-up fallback: rd=ufsroot0 should arrive via the toml boot args,
