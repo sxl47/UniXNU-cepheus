@@ -7,6 +7,8 @@ jobs:
   build:
     runs-on: macos-26
     timeout-minutes: 350
+    permissions:
+      contents: write
     env:
       GITHUB_TOKEN: ${{ secrets.GH_PAT }}
       UNIXNU_DEBUG_LDFILELIST: "1"
@@ -524,6 +526,11 @@ jobs:
       # split the userdata zip into 1.9 GiB parts; the user concatenates them.
       - name: Publish to release
         if: always()
+        env:
+          # The job-level GH_TOKEN is the user PAT without release scope; the
+          # ephemeral workflow token with contents:write (declared above) can
+          # create releases and upload assets.
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="cepheus-latest"
           FILES=""
