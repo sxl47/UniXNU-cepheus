@@ -1,9 +1,9 @@
 #!/bin/bash
 # Pinned, portable constant-time AES for the NABU legacy CBC/ECB API.
 set -euo pipefail
-[[ "${MACHINE_CONFIG:-}" == NABU ]] || exit 0
+[[ "${MACHINE_CONFIG:-}" == NABU || "${MACHINE_CONFIG:-}" == CEPHEUS ]] || exit 0
 [[ -f libkern/crypto/corecrypto_aes.c ]] || exit 1
-if [[ -d libkern/crypto/nabu_bearssl ]]; then
+if [[ -d libkern/crypto/cepheus_bearssl ]]; then
     echo "BearSSL source already staged; skipping"
     exit 0
 fi
@@ -21,7 +21,7 @@ import shutil
 import sys
 
 source = Path(sys.argv[1])
-target = Path('libkern/crypto/nabu_bearssl')
+target = Path('libkern/crypto/cepheus_bearssl')
 if target.exists():
     raise SystemExit(f'refusing to overwrite existing AES source: {target}')
 shutil.copytree(source / 'inc', target / 'inc')

@@ -2,14 +2,14 @@
 # dxb runs patches/*.sh from the XNU source root before applying *.patch.
 set -euo pipefail
 
-[[ "${MACHINE_CONFIG:-}" == NABU ]] || exit 0
+[[ "${MACHINE_CONFIG:-}" == NABU || "${MACHINE_CONFIG:-}" == CEPHEUS ]] || exit 0
 [[ "${MACOS_VERSION:-}" == 13.5 ]] || {
     echo 'NABU libpthread integration requires xnu-8796.141.3 (macOS 13.5)' >&2
     exit 1
 }
 [[ -f bsd/pthread/pthread_shims.c ]] || exit 1
 
-if [[ -d bsd/pthread/nabu_libpthread ]]; then
+if [[ -d bsd/pthread/cepheus_libpthread ]]; then
     echo "libpthread provider already staged; skipping"
     exit 0
 fi
@@ -31,7 +31,7 @@ import shutil
 import sys
 
 source = Path(sys.argv[1])
-target = Path('bsd/pthread/nabu_libpthread')
+target = Path('bsd/pthread/cepheus_libpthread')
 if target.exists():
     raise SystemExit(f'refusing to overwrite existing provider: {target}')
 # Preserve upstream copyright/license headers; no downloaded sources in git.
@@ -66,5 +66,5 @@ PY
 # Kernel builds use -nostdinc. Carry the real SDK target definitions beside
 # the provider so local compiles from the uploaded build tree work as well.
 pthread_sdk=$(xcrun --sdk macosx --show-sdk-path)
-cp "$pthread_sdk/usr/include/TargetConditionals.h" bsd/pthread/nabu_libpthread/
+cp "$pthread_sdk/usr/include/TargetConditionals.h" bsd/pthread/cepheus_libpthread/
 echo "Staged libpthread-514.100.2 ($pthread_sha) for NABU"

@@ -48,7 +48,7 @@
  bool
 --- /dev/null
 +++ b/iokit/Kernel/arm/NabuSurface.h
-@@ -0,0 +1,65 @@
+@@ -0,0 +1,71 @@
 +/*
 + * Built-in IOSurface for CEPHEUS (see NabuSurface.cpp).
 + *
@@ -101,6 +101,12 @@
 +/* Retained surface for an id, or NULL. */
 +NabuSurface *cepheus_surface_copy(uint32_t id);
 +
++/* Highest-id live BGRA surface (the renderer fallback target), or 0. */
++uint32_t cepheus_surface_bgra_hint_id(void);
++
++/* Log every live surface; bring-up probe driven from the framebuffer. */
++void cepheus_surface_probe_all(void);
++
 +/*
 + * Publish physical memory (the panel framebuffer) as a surface. Returns a
 + * retained surface that stays in the id table until released by the caller
@@ -116,7 +122,7 @@
 +#endif /* _CEPHEUS_SURFACE_H */
 --- /dev/null
 +++ b/iokit/Kernel/arm/NabuSurface.cpp
-@@ -0,0 +1,872 @@
+@@ -0,0 +1,909 @@
 +/*
 + * Built-in IOSurface for CEPHEUS.
 + *
@@ -300,6 +306,43 @@
 +	}
 +	IOLockUnlock(cepheus_surface_lock);
 +	return s;
++}
++
++uint32_t
++cepheus_surface_bgra_hint_id(void)
++{
++	uint32_t id = 0;
++	if (cepheus_surface_lock == NULL) {
++		return 0;
++	}
++	IOLockLock(cepheus_surface_lock);
++	for (uint32_t i = 1; i < CEPHEUS_SURFACE_MAX_ID; i++) {
++		NabuSurface *s = cepheus_surface_table[i];
++		if (s != NULL && s->pixelFormat == 0x42475241 /* BGRA */ &&
++		    s->width >= 1024 && s->height >= 768) {
++			id = i;   /* higher ids are newer */
++		}
++	}
++	IOLockUnlock(cepheus_surface_lock);
++	return id;
++}
++
++void
++cepheus_surface_probe_all(void)
++{
++	if (cepheus_surface_lock == NULL) {
++		return;
++	}
++	IOLockLock(cepheus_surface_lock);
++	for (uint32_t i = 1; i < CEPHEUS_SURFACE_MAX_ID; i++) {
++		NabuSurface *s = cepheus_surface_table[i];
++		if (s != NULL) {
++			IOLog("CEPHEUS SURF %u: %ux%u fmt 0x%08x bpe %u row %u alloc %u\n",
++			    i, s->width, s->height, s->pixelFormat,
++			    s->bytesPerElement, s->bytesPerRow, s->allocSize);
++		}
++	}
++	IOLockUnlock(cepheus_surface_lock);
 +}
 +
 +/* The table lock; the framebuffer may publish a surface before the root starts. */
