@@ -113,6 +113,47 @@ jobs:
           grep -n "HOST = sys.platform" UniXNU/scripts/unixnu/userdata.py
           grep -n "LZFSE_BIN" UniXNU/scripts/unixnu/udif.py
 
+      - name: Patch userdata.py Darwin path to hdiutil convert
+        # Round 18: with HOST fixed, the fork's macOS path has a size mismatch its author
+        # never hit (the HOST bug meant this code was dead on every mac). image_size()
+        # reads hdiutil imageinfo 'Total Bytes' -- the whole virtual disk -- while attach()
+        # unpacks only the Apple_APFS partition with the hand-rolled udif.py walker. The
+        # read loop then hits EOF a few MB early: "short read from 044-76040-038.apfs".
+        # Replace both functions on macOS with a native hdiutil convert (UDRW): the
+        # converted raw whole-disk image matches imageinfo Total Bytes exactly and is the
+        # documented "byte for byte from the disk images" content. Definitions appended at
+        # module scope override the originals for every later call.
+        run: |
+          cat >> UniXNU/scripts/unixnu/userdata.py <<'EOF'
+
+          # --- sxl47/cepheus CI patch: hdiutil-native whole-disk path on macOS ---
+          if HOST == 'Darwin':
+              import os as _os
+
+              def _converted_raw(dmg):
+                  out = dmg.parent / (dmg.stem + '.img')
+                  if not (out.is_file() and out.stat().st_size):
+                      subprocess.run(
+                          ['hdiutil', 'convert', str(dmg), '-format', 'UDRW',
+                           '-o', str(dmg.parent / dmg.stem)],
+                          check=True)
+                  return out
+
+              def image_size(dmg):
+                  """Bytes the window will hold: the whole virtual disk hdiutil presents."""
+                  if not is_udif(dmg):
+                      return dmg.stat().st_size
+                  return _os.path.getsize(_converted_raw(dmg))
+
+              def attach(dmg):
+                  """Return the converted whole-disk raw image for this dmg."""
+                  if not is_udif(dmg):
+                      return str(dmg)
+                  return str(_converted_raw(dmg))
+          # --- end sxl47/cepheus CI patch ---
+          EOF
+          tail -28 UniXNU/scripts/unixnu/userdata.py
+
       - name: Select defconfig
         run: |
           cd UniXNU
