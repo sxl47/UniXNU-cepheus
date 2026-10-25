@@ -113,46 +113,47 @@ jobs:
           grep -n "HOST = sys.platform" UniXNU/scripts/unixnu/userdata.py
           grep -n "LZFSE_BIN" UniXNU/scripts/unixnu/udif.py
 
-      - name: Patch userdata.py Darwin path to hdiutil convert
-        # Round 18: with HOST fixed, the fork's macOS path has a size mismatch its author
-        # never hit (the HOST bug meant this code was dead on every mac). image_size()
-        # reads hdiutil imageinfo 'Total Bytes' -- the whole virtual disk -- while attach()
-        # unpacks only the Apple_APFS partition with the hand-rolled udif.py walker. The
-        # read loop then hits EOF a few MB early: "short read from 044-76040-038.apfs".
-        # Replace both functions on macOS with a native hdiutil convert (UDRW): the
-        # converted raw whole-disk image matches imageinfo Total Bytes exactly and is the
-        # documented "byte for byte from the disk images" content. Definitions appended at
-        # module scope override the originals for every later call.
+      - name: Patch userdata.py Darwin path to hdiutil attach
+        # Round 18 showed the fork's macOS path was never executed by its author
+        # (the HOST bug made it dead code): image_size() uses hdiutil imageinfo
+        # 'Total Bytes' (the whole virtual disk) while attach() unpacked only the
+        # Apple_APFS partition, so the read loop hit EOF a few MB early. Round 19
+        # tried hdiutil convert UDRW instead, but UDRW output is still a UDIF
+        # container and hdiutil picked the SOURCE file name as its output
+        # ("convert failed - File exists").
+        # The fork's own Darwin design is actually correct: attach() should
+        # return the whole-disk /dev/diskN from 'hdiutil attach -nomount
+        # -readonly'; build() then reads /dev/rdiskN directly, and Total Bytes
+        # equals the device size by construction. Override attach() accordingly;
+        # leave image_size on the fork's hdiutil imageinfo implementation.
         run: |
           cat >> UniXNU/scripts/unixnu/userdata.py <<'EOF'
 
-          # --- sxl47/cepheus CI patch: hdiutil-native whole-disk path on macOS ---
+          # --- sxl47/cepheus CI patch: hdiutil attach device path on macOS ---
           if HOST == 'Darwin':
-              import os as _os
-
-              def _converted_raw(dmg):
-                  out = dmg.parent / (dmg.stem + '.img')
-                  if not (out.is_file() and out.stat().st_size):
-                      subprocess.run(
-                          ['hdiutil', 'convert', str(dmg), '-format', 'UDRW',
-                           '-o', str(dmg.parent / dmg.stem)],
-                          check=True)
-                  return out
-
-              def image_size(dmg):
-                  """Bytes the window will hold: the whole virtual disk hdiutil presents."""
-                  if not is_udif(dmg):
-                      return dmg.stat().st_size
-                  return _os.path.getsize(_converted_raw(dmg))
+              import re as _re
 
               def attach(dmg):
-                  """Return the converted whole-disk raw image for this dmg."""
+                  """Attach read-only without mounting; return the whole-disk device.
+
+                  build() opens /dev/rdiskN and reads exactly hdiutil imageinfo
+                  'Total Bytes' bytes, which is the virtual disk size this device
+                  exposes -- no intermediate file, no size mismatch.
+                  """
                   if not is_udif(dmg):
                       return str(dmg)
-                  return str(_converted_raw(dmg))
+                  proc = subprocess.run(
+                      ['hdiutil', 'attach', '-nomount', '-readonly', '-noverify',
+                       '-noautofsck', str(dmg)],
+                      capture_output=True, text=True, check=True)
+                  for line in proc.stdout.splitlines():
+                      m = _re.match(r'(/dev/disk\d+)\s', line)
+                      if m:
+                          return m.group(1)
+                  raise Error(f'hdiutil attach produced no whole-disk device for {dmg}')
           # --- end sxl47/cepheus CI patch ---
           EOF
-          tail -28 UniXNU/scripts/unixnu/userdata.py
+          tail -30 UniXNU/scripts/unixnu/userdata.py
 
       - name: Select defconfig
         run: |
