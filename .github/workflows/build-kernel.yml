@@ -517,5 +517,31 @@ jobs:
             userdata-cepheus.zip
           if-no-files-found: warn
 
+      # Artifact SAS links expire after ~10 minutes, which makes fetching the
+      # 6.7 GiB userdata zip from this side of the wall nearly impossible.
+      # Release assets are permanent, range-capable and repo-visible URLs, so
+      # publish a rolling release every run. GitHub caps one asset at 2 GiB:
+      # split the userdata zip into 1.9 GiB parts; the user concatenates them.
+      - name: Publish to release
+        if: always()
+        run: |
+          TAG="cepheus-latest"
+          FILES=""
+          [ -f cust-payload.img ] && FILES="$FILES cust-payload.img"
+          [ -f kernel.macho.adt ] && FILES="$FILES kernel.macho.adt"
+          [ -f UniXNU/out/cepheus/kernel/kernel.macho ] && FILES="$FILES UniXNU/out/cepheus/kernel/kernel.macho"
+          if [ -f userdata-cepheus.zip ]; then
+            split -b 1900m -d userdata-cepheus.zip userdata-cepheus.zip.part-
+            FILES="$FILES userdata-cepheus.zip.part-*"
+            sha256sum userdata-cepheus.zip > userdata-cepheus.zip.sha256
+            FILES="$FILES userdata-cepheus.zip.sha256"
+          fi
+          [ -n "$FILES" ] || { echo "nothing to publish"; exit 0; }
+          gh release create "$TAG" $FILES \
+            --title "cepheus bring-up build" \
+            --notes "Rolling build. Download userdata-cepheus.zip.part-00..NN, then: cat userdata-cepheus.zip.part-* > userdata-cepheus.zip (verify with the .sha256 file)" \
+            || gh release upload "$TAG" $FILES --clobber
+          gh release view "$TAG" --json assets --jq '.assets[] | "\(.name)  \(.size)"'
+
 
 
