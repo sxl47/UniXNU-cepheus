@@ -147,7 +147,7 @@ def main():
                         # clears it when -enable_kprintf_spam is present in boot-args.
                         # Without this property the kernel prints nothing at all and
                         # the boot log is invisible by design.
-                        ('boot-args', b'-enable_kprintf_spam\0'),
+        ('boot-args', b'-enable_kprintf_spam rd=ufsroot0\0'),
                         ('osenvironment', b'main\0'),
                         *([('certificate-production-status', struct.pack('<I', 0)), ('effective-production-status-ap', struct.pack('<I', 0)),
                            ('certificate-security-mode', struct.pack('<I', 1)), ('effective-security-mode-sep', struct.pack('<I', 1))]
@@ -178,6 +178,12 @@ def main():
             ('width', struct.pack('<I', args.fbcon_width)),
             ('height', struct.pack('<I', args.fbcon_height)),
             ('stride', struct.pack('<I', args.fbcon_stride)),
+        ]),
+        # Consumed by bsd/dev/cepheus_ufs.c (patch 0028): the raw UFS root
+        # driver maps its register window from this node. reg = <phys size>
+        # of the SM8150 UFS host controller (same constants as NativeUfs).
+        node('cepheus-ufs', [
+            ('reg', struct.pack('<QQ', UFS_HC, UFS_HC_SIZE)),
         ]),
         *( [node('buttons', [('compatible', b'buttons\0'), ('device_type', b'buttons\0'),
                              ('button-names', b'hold\0voldown\0volup\0'),

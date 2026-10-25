@@ -61,6 +61,10 @@ echo "ramdisk: $(stat -f %z "$RAMDISK" 2>/dev/null || stat -c %s "$RAMDISK" 2>/d
 # Boot arguments carried over from the nabu bring-up (same SM8150 platform):
 #   -v serial=3 debug=0x14e   early kernel output
 #   kextlog=0xfff             verbose kext logging
+#   rd=ufsroot0               root on the raw UFS userdata partition via
+#                             bsd/dev/cepheus_ufs.c (patch 0028); cepheus has
+#                             no IOMedia class, so IOMedia UUID matching can
+#                             never find a root candidate.
 #   native-ufs-root=1         publish the UFS block class as the root device
 #   sheng-data-persist=2      wait for store geometry so Data overlay activates
 #   sheng-smp=0               single CPU for bring-up (SMP caused silent resets)
@@ -96,7 +100,7 @@ title = "XNU (SM8150 UFS)"
 type = "xnu"
 path = "Payloads/kernel.macho"
 initrd = "Payloads/ramdisk.img"
-args = "-v serial=3 debug=0x14e kextlog=0xfff kt_fixed_zones=120 -no_slto_panic amfi_get_out_of_my_way=1 native-ufs-root=1 native-ufs-allow-unverified=1 sheng-data-persist=2 sheng-smp=0 wdt=-1 sheng-disable-watchdogd=1"
+args = "-v serial=3 debug=0x14e kextlog=0xfff kt_fixed_zones=120 -no_slto_panic amfi_get_out_of_my_way=1 rd=ufsroot0 native-ufs-root=1 native-ufs-allow-unverified=1 sheng-data-persist=2 sheng-smp=0 wdt=-1 sheng-disable-watchdogd=1"
 TOML
 
 rm -f "$OUT"
