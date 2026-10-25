@@ -103,3 +103,19 @@ jobs:
             out/
             dxb/build.log
           if-no-files-found: warn
+
+      - name: Publish kernel to release (public direct download)
+        if: always()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: k8796-${{ github.run_id }}
+          name: xnu-8796 ${{ github.sha }}
+          body: |
+            Automated xnu-8796 build (${{ github.sha }})
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          files: |
+            out/kernel.development.cepheus
+            out/SHA256SUMS
+            dxb/build.log
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
