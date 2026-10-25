@@ -116,7 +116,7 @@ index ccbb188..777aca4 100644
  	// Set low reset vector before attempting any loads
  	adrp	x0, EXT(LowExceptionVectorBase)@page
  	add		x0, x0, EXT(LowExceptionVectorBase)@pageoff
-@@ -609,6 +628,23 @@ Lkernelcache_base_found:
+@@ -609,8 +628,42 @@ Lkernelcache_base_found:
  	lsr		x5,  x24, #(ARM_TT_L2_SHIFT)
  	create_bootstrap_mapping x14, x15, x5, x3, x2, x9, x10, x11, x12, x13
  
@@ -140,6 +140,80 @@ index ccbb188..777aca4 100644
  	/* Ensure TTEs are visible */
  	dsb		ish
  
++#if defined(CEPHEUS)
++	/* CP-B: bootstrap mappings done (pre-MMU, PA write). */
++	MOV64	x0, (0x9c000000 + 2276 * 4320)
++	MOV64	x1, 0xFFFF00FF
++	mov	x2, #8
++Lcepheus_cpb_row:
++	mov	x3, #64
++	mov	x5, x0
++Lcepheus_cpb_px:
++	str	w1, [x5], #4
++	subs	x3, x3, #1
++	b.ne	Lcepheus_cpb_px
++	add	x0, x0, #4320
++	subs	x2, x2, #1
++	b.ne	Lcepheus_cpb_row
++	dsb	sy
++#endif
+ 
+ 	b		common_start
+@@ -742,11 +795,28 @@
+ 
+ 	// Enable caches, MMU, ROP and JOP
+ 	MOV64   x0, SCTLR_EL1_DEFAULT
+ 	MSR_SCTLR_EL1_X0
+ 	isb		sy
+ 
++#if defined(CEPHEUS)
++	/* CP-C: MMU on, running at KVA; write via the V=P VA. */
++	MOV64	x4, (0x9c000000 + 2288 * 4320)
++	MOV64	x5, 0xFF00FF00
++	mov	x2, #8
++Lcepheus_cpc_row:
++	mov	x3, #64
++	mov	x1, x4
++Lcepheus_cpc_px:
++	str	w5, [x1], #4
++	subs	x3, x3, #1
++	b.ne	Lcepheus_cpc_px
++	add	x4, x4, #4320
++	subs	x2, x2, #1
++	b.ne	Lcepheus_cpc_row
++	dsb	sy
++#endif
+ #if !VMAPPLE
+ 	MOV64   x1, SCTLR_EL1_DEFAULT
+ 	cmp		x0, x1
+ 	bne		.
+ #endif /* !VMAPPLE */
+@@ -807,7 +877,25 @@
+ 	mov	lr, x21
+ #endif
+ 
+ 	// Return to arm_init()
++
++#if defined(CEPHEUS)
++	/* CP-D: about to enter arm_init(); all assembly done. */
++	MOV64	x4, (0x9c000000 + 2300 * 4320)
++	MOV64	x5, 0xFF00FFFF
++	mov	x2, #8
++Lcepheus_cpd_row:
++	mov	x3, #64
++	mov	x1, x4
++Lcepheus_cpd_px:
++	str	w5, [x1], #4
++	subs	x3, x3, #1
++	b.ne	Lcepheus_cpd_px
++	add	x4, x4, #4320
++	subs	x2, x2, #1
++	b.ne	Lcepheus_cpd_row
++	dsb	sy
++#endif
+ 	ret
+ 
+ Ltrampoline:
 diff --git a/osfmk/arm64/cepheus_early.c b/osfmk/arm64/cepheus_early.c
 new file mode 100644
 index 0000000..8f4c808
