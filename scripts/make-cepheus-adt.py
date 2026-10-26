@@ -23,6 +23,17 @@ This is first-boot bring-up data: the platform has no matching platform
 expert yet, so the kernel is expected to reach the video console and report
 the genuine missing-driver panic on screen. No Apple device identity is
 claimed and no property is invented beyond these pinned sources.
+
+Two identities are available for the iOS userland:
+
+  - --ipad-identity     iPad Pro 12.9" (2nd generation): root model iPad7,1
+  - --iphone-identity   iPhone X (D22AP): root model iPhone10,3, and the
+                        first root compatible string is D22AP. That is the
+                        mapping IODTPlatformExpert uses on arm64
+                        (getMachineName reads root model, getModelName reads
+                        the first compatible string), so patch 0059 makes
+                        sysctl report hw.machine=iPhone10,3 /
+                        hw.model=D22AP as the iOS userland expects.
 """
 from pathlib import Path
 import argparse
@@ -97,6 +108,9 @@ def main():
     parser.add_argument('--chip-id', type=lambda value: int(value, 16), default=None)
     parser.add_argument('--ipad-identity', action='store_true',
                         help='/product and /buttons describe an iPad-class device without a Home button')
+    parser.add_argument('--iphone-identity', action='store_true',
+                        help='/product describes an iPhone X (D22AP) and the root DT carries '
+                             'model=iPhone10,3 / compatible=D22AP for patch 0059')
     parser.add_argument('--cpu-regs', default='0',
                         help='Comma-separated CPU MPIDR affinity values; SM8150 numbers cores 0x000..0x700 in Affinity1')
     parser.add_argument('--psci-method', choices=['smc', 'hvc'], default='smc')
@@ -111,6 +125,10 @@ def main():
     parser.add_argument('--fbcon-height', type=int, default=FBCON_HEIGHT_DEFAULT)
     parser.add_argument('--fbcon-stride', type=int, default=FBCON_STRIDE_DEFAULT)
     args = parser.parse_args()
+    if args.ipad_identity and args.iphone_identity:
+        parser.error('--ipad-identity and --iphone-identity are mutually exclusive')
+    ios_identity = args.ipad_identity or args.iphone_identity
+    iphone = args.iphone_identity
     if (args.unique_chip_id is None) != (args.chip_id is None):
         parser.error('--unique-chip-id and --chip-id must be supplied together')
     if args.unique_chip_id is not None and not (0 < args.unique_chip_id < 1 << 64 and 0 < args.chip_id < 1 << 32):
@@ -133,10 +151,15 @@ def main():
                                    ('timebase-frequency', struct.pack('<I', TIMEBASE))])
             for index, reg in enumerate(cpu_regs)]
     tree = node('device-tree', [
-        ('model', b'iPad7,1\0' if args.ipad_identity else b'cepheus-first-boot\0'),
-        *([('target-type', b'J120\0')] if args.ipad_identity else []),
+        ('model', b'iPhone10,3\0' if iphone else (b'iPad7,1\0' if args.ipad_identity else b'cepheus-first-boot\0')),
+        *([('target-type', (b'D22\0' if iphone else b'J120\0'))] if ios_identity else []),
         # Root compatible strings: cepheus board DT is xiaomi,cepheus / qcom,sm8150.
-        ('compatible', b'xiaomi,cepheus\0qcom,sm8150\0'),
+        # On arm64 IODTPlatformExpert::getModelName returns the first one, which
+        # is hw.model when patch 0059 disables the macOS kludge -- hence D22AP
+        # must come first for the iPhone identity. IONameMatch walks every
+        # compatible string, so the platform expert still matches xiaomi,cepheus.
+        ('compatible', (b'D22AP\0' if iphone else b'') +
+                       b'xiaomi,cepheus\0qcom,sm8150\0'),
         ('#address-cells', struct.pack('<I', 2)),
         ('#size-cells', struct.pack('<I', 2)),
     ], [
@@ -151,7 +174,7 @@ def main():
                         ('osenvironment', b'main\0'),
                         *([('certificate-production-status', struct.pack('<I', 0)), ('effective-production-status-ap', struct.pack('<I', 0)),
                            ('certificate-security-mode', struct.pack('<I', 1)), ('effective-security-mode-sep', struct.pack('<I', 1))]
-                          if args.ipad_identity else []),
+                          if ios_identity else []),
                         *([('ephemeral-storage', struct.pack('<I', 1))] if (args.data_ramdisk or args.packed_data_ramdisk) else []),
                         *( [('darwinboot-memory-size', struct.pack('<Q', args.owned_memory_size))]
                            if args.owned_memory_size else [] ),
@@ -188,8 +211,12 @@ def main():
         *( [node('buttons', [('compatible', b'buttons\0'), ('device_type', b'buttons\0'),
                              ('button-names', b'hold\0voldown\0volup\0'),
                              ('home-button-type', struct.pack('<I', 2))])] if args.ipad_identity else [] ),
-        node('product', [('product-name', b'iPad Pro (12.9-inch) (2nd generation)\0' if args.ipad_identity else b'Xiaomi Mi 9\0'),
-                         ('model', b'xiaomi,cepheus\0'),
+        node('product', [('product-name', b'iPhone X\0' if iphone else
+                                       (b'iPad Pro (12.9-inch) (2nd generation)\0' if args.ipad_identity else b'Xiaomi Mi 9\0')),
+                         ('model', b'iPhone10,3\0' if iphone else b'xiaomi,cepheus\0'),
+                         # The iPad artwork hints are inherited from nabu and
+                         # pinned there; the iPhone X identity stays minimal
+                         # (root model/compatible drive MobileGestalt).
                          *( [('product-description', b'iPad Pro (12.9-inch) (2nd generation)\0'),
                              ('artwork-device-idiom', b'pad\0'),
                              ('artwork-device-subtype', struct.pack('<I', 2732)),

@@ -107,6 +107,58 @@ jobs:
             || rm -f out/SHA256SUMS
           cat out/SHA256SUMS || true
 
+      - name: Package payload (ADT + 64 MiB cust image)
+        # Until now the 8796 line published a bare kernel. What DarwinBoot
+        # actually consumes is the cust payload, and every piece of it is
+        # already pinned in this repo:
+        #   scripts/make-cepheus-adt.py            platform DT, /cepheus-fbcon,
+        #                                          /cepheus-ufs, rd=ufsroot0
+        #   scripts/make-cepheus-cust-payload.sh   FAT16 volume + unixnu.toml +
+        #                                          RAMDisk placeholder
+        # Values mirror board.toml [payload.adt]; root-matching is deliberately
+        # omitted because this kernel boots the raw UFS window (patch 0028)
+        # instead of an IOMedia volume.
+        #
+        # Identity: patches 0059/0061 target the iPhone X userland (hw.machine
+        # iPhone10,3, hw.model D22AP, 1125x2436 logical panel), so the ADT must
+        # carry the matching root DT instead of the iPad identity used by the
+        # 10063 line.
+        if: always() && hashFiles('out/kernel.*.cepheus') != ''
+        run: |
+          # make-cepheus-cust-payload.sh needs mcopy/mdir and mkfs.vfat; brew
+          # sometimes exits 1 after pouring bottles, so judge by the binaries.
+          brew install mtools dosfstools || brew install mtools dosfstools
+          command -v mcopy
+          command -v mkfs.vfat
+          K=$(ls out/kernel.*.cepheus | head -1)
+          echo "kernel: $K"
+          python3 scripts/make-cepheus-adt.py \
+            --output out/kernel.macho.adt \
+            --dram-size 0x180000000 \
+            --owned-memory-size 0x20000000 \
+            --cpu-regs 0,0x100,0x200,0x300,0x400,0x500,0x600,0x700 \
+            --iphone-identity
+          python3 - <<'PY'
+          import struct
+          b = open('out/kernel.macho.adt', 'rb').read()
+          nprop, nchild = struct.unpack_from('<II', b, 0)
+          props = {}
+          off = 8
+          for _ in range(nprop):
+              key, length = struct.unpack_from('<32sI', b, off)
+              off += 36
+              props[key.rstrip(b'\0').decode()] = b[off:off + length].split(b'\0')[0].decode()
+              off += length + (-length % 4)
+          print('ADT root:', props.get('model'), '/', props.get('compatible'))
+          assert props.get('model') == 'iPhone10,3', props.get('model')
+          assert props.get('compatible') == 'D22AP', props.get('compatible')
+          PY
+          bash scripts/make-cepheus-cust-payload.sh \
+            "$K" out/kernel.macho.adt out/cust-payload.img
+          (cd out && shasum -a 256 cust-payload.img kernel.macho.adt >> SHA256SUMS)
+          cat out/SHA256SUMS
+          ls -lh out
+
       - name: Upload
         if: always()
         uses: actions/upload-artifact@v4
@@ -149,11 +201,19 @@ jobs:
                 unzip xnu-8796-kernel.zip
                 cd out && shasum -a 256 -c SHA256SUMS
 
-            `kernel.*.cepheus` and `SHA256SUMS` are also attached loose for
-            direct download.
+            `cust-payload.img` is the 64 MiB FAT16 cust image built by
+            `scripts/make-cepheus-cust-payload.sh` (kernel + `kernel.macho.adt`
+            + empty ramdisk + `unixnu.toml` boot args, root on `ufsroot0`):
+
+                fastboot flash cust cust-payload.img
+
+            Booting it still needs the UEFI/DarwinBoot boot shim. The kernel,
+            ADT and cust image are also attached loose for direct download.
           files: |
             xnu-8796-kernel.zip
             out/kernel.*.cepheus
+            out/kernel.macho.adt
+            out/cust-payload.img
             out/SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -2,7 +2,14 @@
 
 在 **小米 9（cepheus，骁龙 855）** 上通过 UEFI 启动 **苹果 XNU 内核** 的设备仓库。
 
-> **状态：骨架阶段。** 本仓库从 [Lux12138/unixnu-nabu](https://github.com/Lux12138/unixnu-nabu)（小米平板 5，同 SM8150，内核已走到 `execve("/sbin/launchd")`）改造而来，所有需真机实测的值均以 `TODO_MEASURE` 标注。开始实测前请读 `TODO-MEASURE.md`。
+> **状态：骨架 + CI 产物阶段。** 本仓库从 [Lux12138/unixnu-nabu](https://github.com/Lux12138/unixnu-nabu)（小米平板 5，同 SM8150，内核已走到 `execve("/sbin/launchd")`）改造而来。DRAM 与 userdata 已在真机实测；fbcon 地址、面板/触摸仍以 `TODO_MEASURE` 标注，开始实测前请读 `TODO-MEASURE.md` 与 `STATUS.md`。
+
+## 两条内核线 / 产物
+
+| 线 | 内核 | 产物 |
+|---|---|---|
+| `build-kernel.yml` | xnu-10063（iOS 17 世代，配 iPadOS 17.7.11） | kernel + payload + userdata + `cust-payload.img` |
+| `build-kernel-8796.yml` | xnu-8796（iOS 16 世代，配 iPhone X 身份/显示） | `kernel.development.cepheus` + `kernel.macho.adt` + `cust-payload.img`（`xnu-8796-kernel.zip`） |
 
 ## 启动链
 
@@ -20,8 +27,8 @@ Android boot image → BootShim → Mu-Silicium UEFI → DarwinBoot → XNU
 
 ## 需要实测的值（全部标 TODO_MEASURE）
 
-1. DRAM 容量与 base（`/proc/meminfo`，6GB/8GB 版本不同）
-2. userdata 分区 first_lba / last_lba（TWRP sysfs + fastboot 交叉验证）
+1. ~~DRAM 容量与 base~~（已实测 2026-10-24：6GB 变体，`dram_size = 0x180000000`）
+2. ~~userdata 分区 first_lba / last_lba~~（已实测：`0x7C000`–`0x1C47FFA`，4K LBA）
 3. 面板 framebuffer 地址（fbcon 节点 reg，从设备树读）
 4. OS 卷 vol_uuid（换 IPSW 后从 dmg 读）
 5. 面板/触摸驱动适配（小米 9：Samsung s6e3fc2x01 面板、触控 IC 待查）
@@ -30,8 +37,13 @@ Android boot image → BootShim → Mu-Silicium UEFI → DarwinBoot → XNU
 
 ```bash
 fastboot flash cust cust-payload.img   # 唯一写操作：cust 分区（格式化不影响安卓系统）
-fastboot boot cepheus-xnu.img          # 临时引导，不写盘，不碰 abl/xbl/bootloader
+# 另外需要一个含 UEFI/DarwinBoot 的 boot 镜像（uefi-cepheus，仍在搭建）：
+fastboot boot <uefi-darwinboot>.img    # 临时引导，不写盘，不碰 abl/xbl/bootloader
 ```
+
+`cust-payload.img`（64 MiB FAT16）里已包含 `Payloads/kernel.macho`、
+`Payloads/kernel.macho.adt`、空 ramdisk 占位和 `EFI/UniXNU/unixnu.toml`；
+DarwinBoot 只挂 FAT 卷，所以内核和 ADT 必须放在这个镜像里。
 
 卡死长按电源 10 秒强制重启回安卓。劣质 USB 线会导致 96MB 镜像传输报 `Load Error`。
 
