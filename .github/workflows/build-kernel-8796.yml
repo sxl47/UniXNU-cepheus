@@ -41,6 +41,12 @@ jobs:
   build:
     runs-on: macos-14
     timeout-minutes: 150
+    # The repository default is read-only ("Contents: read"). The release step
+    # needs contents:write to create the k8796-<run_id> release; without this
+    # the token is read-only and the GitHub API answers 403
+    # "Resource not accessible by integration".
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -92,7 +98,10 @@ jobs:
           mkdir -p out
           cp -R dxb/fakeroot/System/Library/Kernels/. out/ 2>/dev/null || true
           ls -la out || true
-          (cd out && shasum -a 256 kernel.* > SHA256SUMS) || true
+          # kernel.development.cepheus.link is a directory, so a bare `kernel.*`
+          # glob made shasum fail; only checksum the kernel files themselves.
+          shasum -a 256 out/kernel.*.cepheus > out/SHA256SUMS || rm -f out/SHA256SUMS
+          cat out/SHA256SUMS || true
 
       - name: Upload
         if: always()
@@ -105,7 +114,10 @@ jobs:
           if-no-files-found: warn
 
       - name: Publish kernel to release (public direct download)
-        if: always()
+        # Only publish when the kernel actually exists: `always()` alone would
+        # try to create a release for a failed build, and agh-release then
+        # errors on the missing file.
+        if: always() && hashFiles('out/kernel.*.cepheus') != ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: k8796-${{ github.run_id }}
@@ -114,7 +126,7 @@ jobs:
             Automated xnu-8796 build (${{ github.sha }})
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           files: |
-            out/kernel.development.cepheus
+            out/kernel.*.cepheus
             out/SHA256SUMS
             dxb/build.log
         env:
