@@ -100,7 +100,11 @@ jobs:
           ls -la out || true
           # kernel.development.cepheus.link is a directory, so a bare `kernel.*`
           # glob made shasum fail; only checksum the kernel files themselves.
-          shasum -a 256 out/kernel.*.cepheus > out/SHA256SUMS || rm -f out/SHA256SUMS
+          # Write the list with bare file names (run from inside out/) so
+          # `sha256sum -c SHA256SUMS` works both in the extracted zip and next to
+          # the loose release assets.
+          (cd out && shasum -a 256 kernel.*.cepheus > SHA256SUMS) \
+            || rm -f out/SHA256SUMS
           cat out/SHA256SUMS || true
 
       - name: Upload
@@ -112,6 +116,19 @@ jobs:
             out/
             dxb/build.log
           if-no-files-found: warn
+
+      - name: Package build product (same layout as the Actions artifact)
+        # The public release should carry the build product itself, not only the
+        # pieces the artifact happens to be made of. Mirror the Upload step's
+        # path list (least common ancestor = workspace root), so extracting
+        # xnu-8796-kernel.zip yields out/... and dxb/build.log exactly like the
+        # Actions artifact named xnu-8796-kernel.
+        if: always() && hashFiles('out/kernel.*.cepheus') != ''
+        run: |
+          rm -f xnu-8796-kernel.zip
+          zip -qr xnu-8796-kernel.zip out dxb/build.log
+          unzip -l xnu-8796-kernel.zip | tail -3
+          ls -lh xnu-8796-kernel.zip
 
       - name: Publish kernel to release (public direct download)
         # Only publish when the kernel actually exists: `always()` alone would
@@ -125,9 +142,18 @@ jobs:
           body: |
             Automated xnu-8796 build (${{ github.sha }})
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            `xnu-8796-kernel.zip` is the build product, with the same layout as
+            the Actions artifact of that name (`out/` + `dxb/build.log`):
+
+                unzip xnu-8796-kernel.zip
+                cd out && shasum -a 256 -c SHA256SUMS
+
+            `kernel.*.cepheus` and `SHA256SUMS` are also attached loose for
+            direct download.
           files: |
+            xnu-8796-kernel.zip
             out/kernel.*.cepheus
             out/SHA256SUMS
-            dxb/build.log
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
