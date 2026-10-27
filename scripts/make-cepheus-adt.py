@@ -194,8 +194,10 @@ def main():
         *([node('psci', [('compatible', b'arm,psci-1.0\0'), ('method', args.psci_method.encode() + b'\0')])] if len(cpus) > 1 else []),
         node('defaults', [('sleep-disabled', struct.pack('<I', 1))]),
         node('options', []),
-        # Consumed by patch 0003 (framebuffer serial console). Values are
-        # TODO_MEASURE nabu placeholders until the cepheus DT is read.
+        # Consumed by patch 0003 (framebuffer serial console). Values come from
+        # cepheus.dts: cont_splash_region@9c000000 = <0x9c000000 0x2400000>,
+        # panel 1080x2340 with 4320 bytes per line. Runtime boot_args->Video
+        # wins on the phone; this node is only the fallback.
         node('cepheus-fbcon', [
             ('reg', struct.pack('<QQ', args.fbcon_reg, args.fbcon_size)),
             ('width', struct.pack('<I', args.fbcon_width)),

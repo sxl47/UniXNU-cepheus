@@ -29,9 +29,29 @@ Android boot image → BootShim → Mu-Silicium UEFI → DarwinBoot → XNU
 
 1. ~~DRAM 容量与 base~~（已实测 2026-10-24：6GB 变体，`dram_size = 0x180000000`）
 2. ~~userdata 分区 first_lba / last_lba~~（已实测：`0x7C000`–`0x1C47FFA`，4K LBA）
-3. 面板 framebuffer 地址（fbcon 节点 reg，从设备树读）
+3. ~~面板 framebuffer 地址~~（设备树已确认：`cont_splash_region@9c000000`，
+   `reg = <0x9c000000 0x2400000>`，1080×2340，stride 4320；运行期内核优先用
+   `boot_args->Video`，ADT 值只作回退）
 4. OS 卷 vol_uuid（换 IPSW 后从 dmg 读）
 5. 面板/触摸驱动适配（小米 9：Samsung s6e3fc2x01 面板、触控 IC 待查）
+
+## 一次启动能看到什么（诊断链）
+
+从早到晚共七层信号，看到第 N 层就说明前 N 层都成功了：
+
+| # | 画面 | 说明 |
+|---|---|---|
+| A | UEFI 菜单 | 固件正常 |
+| B | DarwinBoot 日志 + **底部**绿条 | 交接桩执行；`video pa` / `entry pa` 不再被绿条遮住 |
+| C | 左下角 64×32 白/绿小方块 | `start.s` 第一条指令执行（无栈无页表；直接读 `boot_args->Video`，无效才退回 `0x9c000000`） |
+| D | `CEPHEUS EARLY 0: fb=boot_args pa=0x... w=... h=... row=...` | `arm_init()` 已进入，C 侧打点接管同一块屏幕 |
+| E | 底部 8 格色块 + `CEPHEUS EARLY 1..8` | 内核逐段推进，停在第几格就是卡在哪个检查点 |
+| F | 深蓝底 + `cepheus fbcon ready: pa=0x...` | `serial_init()` 注册 framebuffer 控制台成功 |
+| G | 蓝底内核日志/panic | 后续输出可见 |
+
+真机操作与文字转写模板见 [`docs/device-capture-checklist.md`](docs/device-capture-checklist.md)。
+CI 现在会断言 `0003` / `0004` / `0006` / `0010` / `0010z` / `0028` 六个关键补丁
+**确实被应用**，不会再出现“补丁静默跳过 → 屏幕全黑”的假象。
 
 ## 刷机（拿到产物之后，安全边界）
 

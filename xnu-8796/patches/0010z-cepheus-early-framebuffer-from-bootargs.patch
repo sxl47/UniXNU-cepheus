@@ -1,0 +1,278 @@
+diff --git a/osfmk/arm/arm_init.c b/osfmk/arm/arm_init.c
+index abfc169..ec3e53b 100644
+--- a/osfmk/arm/arm_init.c
++++ b/osfmk/arm/arm_init.c
+@@ -347,6 +347,15 @@ arm_init(
+ 	DTEntry chosen = NULL;
+ 	unsigned int dt_entry_size = 0;
+ 
++	/*
++	 * Follow the firmware's framebuffer before drawing anything: the splash
++	 * address baked into cepheus_early.c is a guess taken from the SoC DTs,
++	 * while args->Video is the surface the loader actually had on screen.
++	 * start.s already preferred args->Video for the stage-0 band; this makes
++	 * the C-side marks and panics follow the same surface.
++	 */
++	cepheus_early_video(args->Video.v_baseAddr, args->Video.v_rowBytes,
++	    args->Video.v_width, args->Video.v_height);
+ 	cepheus_early_mark(1, "arm_init entered (MMU on)");
+ 
+ 	arm_setup_pre_sign();
+diff --git a/osfmk/arm64/cepheus_early.c b/osfmk/arm64/cepheus_early.c
+index f355bac..9f79343 100644
+--- a/osfmk/arm64/cepheus_early.c
++++ b/osfmk/arm64/cepheus_early.c
+@@ -10,15 +10,31 @@
+ #include <stdint.h>
+ #include <kern/misc_protos.h>
+ 
+-#define EARLY_FB ((volatile uint32_t *)(uintptr_t)0x9c000000)
+-#define EARLY_WIDTH 1080u
+-#define EARLY_HEIGHT 2340u
+-#define EARLY_STRIDE (4320u / 4)
++/*
++ * Defaults come from the SoC device tree (cont_splash_region@9c000000). They
++ * are only a fallback: cepheus_early_video() replaces all of it with boot_args'
++ * Video, i.e. the surface the loader actually left on screen. start.s reads
++ * Video straight out of boot_args and only falls back to this constant.
++ */
++#define EARLY_DEFAULT_FB 0x9c000000u
++#define EARLY_DEFAULT_WIDTH 1080u
++#define EARLY_DEFAULT_HEIGHT 2340u
++#define EARLY_DEFAULT_ROW_BYTES 4320u
++
+ #define EARLY_SCALE 2u
+ #define EARLY_CELL_W (8u * EARLY_SCALE)
+ #define EARLY_CELL_H (16u * EARLY_SCALE)
+-#define EARLY_ROWS ((EARLY_HEIGHT - 32u) / EARLY_CELL_H)
+-#define EARLY_COLS (EARLY_WIDTH / EARLY_CELL_W)
++#define EARLY_BAND 32u
++
++static uintptr_t early_fb = EARLY_DEFAULT_FB;
++static unsigned int early_width = EARLY_DEFAULT_WIDTH;
++static unsigned int early_height = EARLY_DEFAULT_HEIGHT;
++static unsigned int early_row_bytes = EARLY_DEFAULT_ROW_BYTES;
++static unsigned int early_rows = (EARLY_DEFAULT_HEIGHT - EARLY_BAND) / EARLY_CELL_H;
++static unsigned int early_cols = EARLY_DEFAULT_WIDTH / EARLY_CELL_W;
++
++#define EARLY_PTR ((volatile uint32_t *)early_fb)
++#define EARLY_STRIDE (early_row_bytes / 4u)
+ 
+ extern unsigned char iso_font[256 * 16];
+ 
+@@ -30,8 +46,8 @@ static void
+ cepheus_early_clear_row(void)
+ {
+ 	for (unsigned int y = 0; y < EARLY_CELL_H; y++) {
+-		volatile uint32_t *line = EARLY_FB + (early_row * EARLY_CELL_H + y) * EARLY_STRIDE;
+-		for (unsigned int x = 0; x < EARLY_WIDTH; x++) {
++		volatile uint32_t *line = EARLY_PTR + (early_row * EARLY_CELL_H + y) * EARLY_STRIDE;
++		for (unsigned int x = 0; x < early_width; x++) {
+ 			line[x] = 0xff000000u;
+ 		}
+ 	}
+@@ -51,9 +67,9 @@ cepheus_early_putc(char c)
+ 		early_col = 0;
+ 		return;
+ 	}
+-	if (c == '\n' || early_col == EARLY_COLS) {
++	if (c == '\n' || early_col == early_cols) {
+ 		early_col = 0;
+-		early_row = (early_row + 1) % EARLY_ROWS;
++		early_row = (early_row + 1) % early_rows;
+ 		cepheus_early_clear_row();
+ 		if (c == '\n') {
+ 			return;
+@@ -62,7 +78,7 @@ cepheus_early_putc(char c)
+ 	const unsigned char *glyph = iso_font + (unsigned char)c * 16;
+ 	for (unsigned int gy = 0; gy < 16; gy++) {
+ 		for (unsigned int sy = 0; sy < EARLY_SCALE; sy++) {
+-			volatile uint32_t *line = EARLY_FB +
++			volatile uint32_t *line = EARLY_PTR +
+ 			    (early_row * EARLY_CELL_H + gy * EARLY_SCALE + sy) * EARLY_STRIDE +
+ 			    early_col * EARLY_CELL_W;
+ 			for (unsigned int gx = 0; gx < 8; gx++) {
+@@ -91,9 +107,14 @@ cepheus_early_mark(unsigned int stage, const char *label)
+ 		return;
+ 	}
+ 	uint32_t color = 0xff00ff00u | (stage * 28u << 16);
+-	for (unsigned int y = EARLY_HEIGHT - 32; y < EARLY_HEIGHT; y++) {
+-		for (unsigned int x = stage * 64; x < (stage + 1) * 64; x++) {
+-			EARLY_FB[y * EARLY_STRIDE + x] = color;
++	unsigned int x_end = (stage + 1) * 64;
++
++	if (x_end > early_width) {
++		x_end = early_width;
++	}
++	for (unsigned int y = early_height - EARLY_BAND; y < early_height; y++) {
++		for (unsigned int x = stage * 64; x < x_end; x++) {
++			EARLY_PTR[y * EARLY_STRIDE + x] = color;
+ 		}
+ 	}
+ 	__asm__ volatile("dsb sy" ::: "memory");
+@@ -104,6 +125,82 @@ cepheus_early_mark(unsigned int stage, const char *label)
+ 	cepheus_early_putc('\n');
+ }
+ 
++static void
++cepheus_early_hex_digits(uintptr_t v, unsigned int digits)
++{
++	static const char chars[] = "0123456789abcdef";
++
++	for (int shift = (int)(digits * 4) - 4; shift >= 0; shift -= 4) {
++		cepheus_early_putc(chars[(v >> shift) & 0xf]);
++	}
++}
++
++static void
++cepheus_early_hex(uintptr_t v)
++{
++	cepheus_early_hex_digits(v, 16);
++}
++
++static void
++cepheus_early_hex32(unsigned int v)
++{
++	cepheus_early_hex_digits(v, 8);
++}
++
++/*
++ * Adopt the framebuffer the loader actually used. Called from arm_init() with
++ * boot_args->Video before the first checkpoint, so every later mark and every
++ * panic lands on the screen a human is looking at instead of on the address
++ * start.s had to guess (and already used for the stage-0 band).
++ *
++ * The report is printed unconditionally: "no CEPHEUS EARLY 0 line" must mean
++ * "arm_init() was never reached", never "the console silently disagreed about
++ * the mode".
++ */
++void
++cepheus_early_video(uintptr_t base, unsigned int row_bytes,
++    unsigned int width, unsigned int height)
++{
++	/* One full cell plus the bottom band has to fit, or the console has zero
++	 * rows and the first newline would divide by zero. */
++	int usable = base != 0 && width >= EARLY_CELL_W &&
++	    height >= EARLY_BAND + EARLY_CELL_H && row_bytes >= width * 4u;
++
++	if (usable) {
++		early_fb = base;
++		early_width = width;
++		early_height = height;
++		early_row_bytes = row_bytes;
++		early_rows = (height - EARLY_BAND) / EARLY_CELL_H;
++		early_cols = width / EARLY_CELL_W;
++		early_row = 0;
++		early_col = 0;
++		early_started = 0;
++	}
++
++	cepheus_early_mark(0, usable ? "fb=boot_args pa=0x" :
++	    "fb=boot_args BAD, using 0x");
++	cepheus_early_hex(early_fb);
++	if (usable) {
++		cepheus_early_string(" w=0x");
++		cepheus_early_hex32(early_width);
++		cepheus_early_string(" h=0x");
++		cepheus_early_hex32(early_height);
++		cepheus_early_string(" row=0x");
++		cepheus_early_hex32(early_row_bytes);
++	} else {
++		cepheus_early_string(" raw pa=0x");
++		cepheus_early_hex(base);
++		cepheus_early_string(" w=0x");
++		cepheus_early_hex32(width);
++		cepheus_early_string(" h=0x");
++		cepheus_early_hex32(height);
++		cepheus_early_string(" row=0x");
++		cepheus_early_hex32(row_bytes);
++	}
++	cepheus_early_putc('\n');
++}
++
+ void
+ cepheus_early_panic(const char *fmt, va_list *args)
+ {
+diff --git a/osfmk/arm64/cepheus_early.h b/osfmk/arm64/cepheus_early.h
+index 26db7f2..55633ef 100644
+--- a/osfmk/arm64/cepheus_early.h
++++ b/osfmk/arm64/cepheus_early.h
+@@ -4,13 +4,24 @@
+ 
+ #include <pexpert/arm64/board_config.h>
+ #include <stdarg.h>
++#include <stdint.h>
+ 
+ #if defined(CEPHEUS)
++void cepheus_early_video(uintptr_t base, unsigned int row_bytes,
++    unsigned int width, unsigned int height);
+ void cepheus_early_mark(unsigned int stage, const char *label);
+ void cepheus_early_putc(char c);
+ void cepheus_early_panic(const char *fmt, va_list *args);
+ void cepheus_early_disable(void);
+ #else
++static inline void cepheus_early_video(uintptr_t base, unsigned int row_bytes,
++    unsigned int width, unsigned int height)
++{
++	(void)base;
++	(void)row_bytes;
++	(void)width;
++	(void)height;
++}
+ static inline void cepheus_early_mark(unsigned int stage, const char *label)
+ {
+ 	(void)stage;
+diff --git a/osfmk/arm64/genassym.c b/osfmk/arm64/genassym.c
+index 19eb823..4c56dbf 100644
+--- a/osfmk/arm64/genassym.c
++++ b/osfmk/arm64/genassym.c
+@@ -299,6 +299,10 @@ main(int     argc,
+ 	DECLARE("BA_MEM_SIZE", offsetof(struct boot_args, memSize));
+ 	DECLARE("BA_TOP_OF_KERNEL_DATA", offsetof(struct boot_args, topOfKernelData));
+ 	DECLARE("BA_BOOT_FLAGS", offsetof(struct boot_args, bootFlags));
++	/* cepheus stage-0 marker reads the firmware framebuffer before C runs */
++	DECLARE("BA_VIDEO_BASE", offsetof(struct boot_args, Video.v_baseAddr));
++	DECLARE("BA_VIDEO_ROW_BYTES", offsetof(struct boot_args, Video.v_rowBytes));
++	DECLARE("BA_VIDEO_HEIGHT", offsetof(struct boot_args, Video.v_height));
+ 
+ 	DECLARE("SR_RESTORE_TCR_EL1", offsetof(struct sysreg_restore, tcr_el1));
+ 
+diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
+index 289802c..14be8df 100644
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -464,11 +464,32 @@ LEXT(start_first_cpu)
+ 	mov		x21, #0
+ 
+ #if defined(CEPHEUS)
+-	/* Stage 0: white 64x32 band, no stack or page tables needed. */
++	/*
++	 * Stage 0: white 64x32 band in the bottom-left corner. No stack, no page
++	 * tables, no C: this is the first proof that the kernel entry code ran.
++	 *
++	 * Prefer boot_args->Video (x20) over the cepheus splash address: the
++	 * firmware may hand over a framebuffer that is not cont_splash_region, and
++	 * a marker written to the wrong physical address is simply invisible.
++	 * Fall back to the SoC DT address only when Video carries no usable mode.
++	 */
++	ldr		x6, [x20, BA_VIDEO_BASE]
++	ldr		x4, [x20, BA_VIDEO_ROW_BYTES]
++	ldr		x7, [x20, BA_VIDEO_HEIGHT]
++	cbz		x6, 1f
++	cbz		x4, 1f
++	cmp		x7, #32
++	b.ls	1f
++	sub		x7, x7, #32
++	mul		x0, x7, x4
++	add		x0, x0, x6
++	b		2f
++1:
+ 	MOV64	x0, (0x9c000000 + 2308 * 4320)
++	mov		x4, #4320
++2:
+ 	mov		w1, #-1
+ 	mov		x2, #32
+-	mov		x4, #4320
+ Lcepheus_mark_row:
+ 	mov		x3, #64
+ 	mov		x5, x0

@@ -1,17 +1,18 @@
 diff --git a/pexpert/arm/pe_serial.c b/pexpert/arm/pe_serial.c
-index 997a4ab..db26bbe 100644
+index 997a4ab..53ec736 100644
 --- a/pexpert/arm/pe_serial.c
 +++ b/pexpert/arm/pe_serial.c
-@@ -697,6 +697,148 @@ register_serial_functions(struct pe_serial_functions *fns)
+@@ -697,6 +697,231 @@ register_serial_functions(struct pe_serial_functions *fns)
  	gPESF = fns;
  }
  
 +/*****************************************************************************/
 +
 +/*
-+ * cepheus: framebuffer "serial" for boards with no usable UART (the Redmi Note
-+ * 10 Pro's debug UART engine runs in SPI mode). kprintf output is drawn onto
-+ * the boot framebuffer described by the ADT node "cepheus-fbcon":
++ * cepheus: framebuffer "serial" for boards with no usable debug UART. kprintf
++ * output is drawn onto the firmware framebuffer carried in boot_args->Video,
++ * falling back to the ADT node "cepheus-fbcon" when the firmware passes an
++ * empty Video:
 + *   reg    = <phys size>       absolute physical address, not arm-io relative
 + *   width, height              pixels
 + *   stride                     bytes per line, 32bpp
@@ -23,9 +24,15 @@ index 997a4ab..db26bbe 100644
 +
 +#define FBCON_SCALE     2
 +#define FBCON_FG        0xffffffffu
-+#define FBCON_BG        0xff000000u
++/*
++ * Bring-up marker: this used to be opaque black. A dark navy background makes
++ * "the kernel reached fbcon_init" unmistakable in a photograph -- the loader's
++ * hand-off screen is black with a green bar, this one is blue.
++ */
++#define FBCON_BG        0xff003060u
 +
 +static volatile uint32_t *fbcon_base;
++static uintptr_t fbcon_phys;
 +static uint32_t fbcon_width, fbcon_height, fbcon_stride;
 +static uint32_t fbcon_cols, fbcon_rows, fbcon_col, fbcon_row;
 +
@@ -49,6 +56,45 @@ index 997a4ab..db26bbe 100644
 +	fbcon_clear_row((fbcon_row + 1) % fbcon_rows);
 +}
 +
++static void fbcon_transmit_data(uint8_t c);
++
++static void
++fbcon_puts(const char *s)
++{
++	while (*s) {
++		fbcon_transmit_data((uint8_t)*s++);
++	}
++}
++
++static void
++fbcon_hex(uint32_t v)
++{
++	static const char digits[] = "0123456789abcdef";
++
++	for (int shift = 28; shift >= 0; shift -= 4) {
++		fbcon_transmit_data((uint8_t)digits[(v >> shift) & 0xf]);
++	}
++}
++
++static void
++fbcon_dec(uint32_t v)
++{
++	char buf[11];
++	int i = 0;
++
++	if (v == 0) {
++		fbcon_transmit_data('0');
++		return;
++	}
++	while (v != 0 && i < (int)sizeof(buf) - 1) {
++		buf[i++] = (char)('0' + (v % 10));
++		v /= 10;
++	}
++	while (i > 0) {
++		fbcon_transmit_data((uint8_t)buf[--i]);
++	}
++}
++
 +static void
 +fbcon_init(void)
 +{
@@ -58,6 +104,15 @@ index 997a4ab..db26bbe 100644
 +	for (uint32_t r = 0; r < fbcon_rows; r++) {
 +		fbcon_clear_row(r);
 +	}
++	fbcon_puts("cepheus fbcon ready: pa=0x");
++	fbcon_hex((uint32_t)fbcon_phys);
++	fbcon_puts(" ");
++	fbcon_dec(fbcon_width);
++	fbcon_puts("x");
++	fbcon_dec(fbcon_height);
++	fbcon_puts(" row ");
++	fbcon_dec(fbcon_stride);
++	fbcon_puts("\n");
 +}
 +
 +static unsigned int
@@ -125,24 +180,52 @@ index 997a4ab..db26bbe 100644
 +	uint64_t const *reg;
 +	uint32_t const *val;
 +	unsigned int size;
++	uintptr_t adt_base = 0;
++	uint32_t adt_width = 0, adt_height = 0, adt_stride = 0;
 +
-+	if (SecureDTFindEntry("name", "cepheus-fbcon", &entry) != kSuccess ||
-+	    SecureDTGetProperty(entry, "reg", (void const **)&reg, &size) != kSuccess || size < 16) {
-+		return;
++	if (SecureDTFindEntry("name", "cepheus-fbcon", &entry) == kSuccess &&
++	    SecureDTGetProperty(entry, "reg", (void const **)&reg, &size) == kSuccess && size >= 16) {
++		adt_base = (uintptr_t)reg[0];
++		if (SecureDTGetProperty(entry, "width", (void const **)&val, &size) == kSuccess) {
++			adt_width = *val;
++		}
++		if (SecureDTGetProperty(entry, "height", (void const **)&val, &size) == kSuccess) {
++			adt_height = *val;
++		}
++		if (SecureDTGetProperty(entry, "stride", (void const **)&val, &size) == kSuccess) {
++			adt_stride = *val;
++		}
 +	}
-+	if (SecureDTGetProperty(entry, "width", (void const **)&val, &size) == kSuccess) {
-+		fbcon_width = *val;
++
++	/*
++	 * The firmware's own framebuffer wins over the ADT node. PE_state.video is
++	 * boot_args->Video expanded by pe_init_platform(), i.e. the surface the
++	 * loader had on screen -- the one the DarwinBoot hand-off bar was painted
++	 * on. If that bar was visible then this surface is visible too, which is
++	 * exactly what a bring-up console needs; a hand-written ADT address is only
++	 * a guess. The node remains the fallback for firmware that passes an empty
++	 * Video, and for boards whose DT is the only source of truth.
++	 */
++	if (PE_state.video.v_baseAddr != 0 && PE_state.video.v_width != 0 &&
++	    PE_state.video.v_height != 0 &&
++	    PE_state.video.v_rowBytes >= PE_state.video.v_width * 4) {
++		fbcon_base = (volatile uint32_t *)ml_io_map_wcomb(
++		    (vm_offset_t)PE_state.video.v_baseAddr,
++		    (vm_size_t)PE_state.video.v_rowBytes * PE_state.video.v_height);
++		fbcon_phys = (uintptr_t)PE_state.video.v_baseAddr;
++		fbcon_width = PE_state.video.v_width;
++		fbcon_height = PE_state.video.v_height;
++		fbcon_stride = PE_state.video.v_rowBytes;
++	} else if (adt_base != 0 && adt_width != 0 && adt_height != 0 &&
++	    adt_stride >= adt_width * 4) {
++		fbcon_base = (volatile uint32_t *)ml_io_map_wcomb((vm_offset_t)adt_base,
++		    (vm_size_t)adt_stride * adt_height);
++		fbcon_phys = adt_base;
++		fbcon_width = adt_width;
++		fbcon_height = adt_height;
++		fbcon_stride = adt_stride;
 +	}
-+	if (SecureDTGetProperty(entry, "height", (void const **)&val, &size) == kSuccess) {
-+		fbcon_height = *val;
-+	}
-+	if (SecureDTGetProperty(entry, "stride", (void const **)&val, &size) == kSuccess) {
-+		fbcon_stride = *val;
-+	}
-+	if (!fbcon_width || !fbcon_height || fbcon_stride < fbcon_width * 4) {
-+		return;
-+	}
-+	fbcon_base = (volatile uint32_t *)ml_io_map_wcomb(reg[0], reg[1]);
++
 +	if (fbcon_base != NULL) {
 +		register_serial_functions(&cepheus_fbcon_serial_functions);
 +	}
@@ -151,7 +234,7 @@ index 997a4ab..db26bbe 100644
  #if HIBERNATION
  /**
   * Transitions the serial driver into a mode that can be run in the hibernation
-@@ -777,6 +919,8 @@ serial_init(void)
+@@ -777,6 +1002,8 @@ serial_init(void)
  
  	PE_parse_boot_argn("disable-uart-irq", &disable_uart_irq, sizeof(disable_uart_irq));
  
@@ -161,7 +244,7 @@ index 997a4ab..db26bbe 100644
  	if (SecureDTFindEntry("name", "gpio", &entryP) == kSuccess) {
  		SecureDTGetProperty(entryP, "reg", (void const **)&reg_prop, &prop_size);
 diff --git a/pexpert/pexpert/arm/protos.h b/pexpert/pexpert/arm/protos.h
-index 404b50b..de0d744 100644
+index 404b50b..5ff7d18 100644
 --- a/pexpert/pexpert/arm/protos.h
 +++ b/pexpert/pexpert/arm/protos.h
 @@ -47,7 +47,8 @@ typedef enum serial_device {

@@ -92,6 +92,51 @@ jobs:
           echo "=== exit: $? ==="
           grep -c ' error: ' build.log || true
 
+      - name: Verify critical patches were applied
+        # blacktop's build.sh treats a patch that no longer applies as a warning
+        # ("Skipping patch ...") and keeps building. For the few patches a
+        # bring-up kernel cannot survive without, that converts a loud failure
+        # into a silently wrong image -- usually a blank screen on the phone,
+        # which is exactly the bug this line of work exists to remove.
+        #
+        # 0003   framebuffer serial console (all kernel output)
+        # 0004   CEPHEUS machine config (board constants, panel geometry)
+        # 0006   MASTER.arm64.cepheus config used by MACHINE_CONFIG=CEPHEUS
+        # 0010   early screen markers (proof the kernel entry code ran)
+        # 0010z  early markers follow boot_args->Video instead of a guess
+        #        ('z' suffix, not 'a': patch order is a locale collation, and in
+        #        en_US/zh_CN '0010a-' sorts BEFORE '0010-', which would make this
+        #        patch fail and be skipped silently)
+        # 0028   raw UFS root device (otherwise no root at all)
+        if: always()
+        run: |
+          LOG=dxb/build.log
+          [ -f "$LOG" ] || { echo "::error::build.log missing, cannot verify patches"; exit 1; }
+          echo "--- patch application log ---"
+          grep -E 'Applying patch:|Skipping patch ' "$LOG" || echo "(no patch lines found)"
+          rc=0
+          for p in \
+            0003-nabu-framebuffer-serial-console \
+            0004-nabu-machine-config \
+            0006-nabu-master-config-open-source-asm-pmap \
+            0010-nabu-early-framebuffer-debug \
+            0010z-cepheus-early-framebuffer-from-bootargs \
+            0028-nabu-ufs-root-device
+          do
+            if grep -q "Applying patch:.*${p}\.patch" "$LOG"; then
+              echo "ok       ${p}"
+            else
+              echo "::error::critical patch was NOT applied: ${p}"
+              rc=1
+            fi
+            if grep -q "Skipping patch .*${p}\.patch" "$LOG"; then
+              echo "::error::critical patch was SKIPPED: ${p}"
+              grep "Skipping patch .*${p}\.patch" "$LOG" || true
+              rc=1
+            fi
+          done
+          exit $rc
+
       - name: Collect
         if: always()
         run: |
@@ -123,6 +168,12 @@ jobs:
         # iPhone10,3, hw.model D22AP, 1125x2436 logical panel), so the ADT must
         # carry the matching root DT instead of the iPad identity used by the
         # 10063 line.
+        #
+        # The --fbcon-* values are no longer guessed: cepheus.dts declares
+        # cont_splash_region@9c000000 with reg = <0x9c000000 0x2400000>, and the
+        # panel is 1080x2340 at 4320 bytes/line. They are only a fallback now --
+        # patch 0003 prefers PE_state.video, i.e. boot_args->Video, the surface
+        # UEFI actually had on screen.
         if: always() && hashFiles('out/kernel.*.cepheus') != ''
         run: |
           # make-cepheus-cust-payload.sh needs mcopy/mdir and mkfs.vfat; brew
@@ -137,6 +188,11 @@ jobs:
             --dram-size 0x180000000 \
             --owned-memory-size 0x20000000 \
             --cpu-regs 0,0x100,0x200,0x300,0x400,0x500,0x600,0x700 \
+            --fbcon-reg 0x9c000000 \
+            --fbcon-size 0x2400000 \
+            --fbcon-width 1080 \
+            --fbcon-height 2340 \
+            --fbcon-stride 4320 \
             --iphone-identity
           python3 - <<'PY'
           import struct

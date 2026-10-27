@@ -32,7 +32,12 @@ cat /sys/block/sda/sdaXX/size
 cat /proc/device-tree/soc/qcom,mdss-sspp@0/... # 或直接
 dmesg | grep -i "mdss\|framebuffer\|s6e3fc"
 ```
-小米 9 面板：Samsung s6e3fc2x01，1080×2340。需要从cepheus 设备树找 MDSS/framebuffer 的物理地址和长度（nabu 是 `reg=<0x9C000000 0xC00000>`，cephues 不同）。
+小米 9 面板：Samsung s6e3fc2x01，1080×2340。**已从设备树确认**
+`cont_splash_region@9c000000` 的 `reg = <0x9c000000 0x2400000>`，即
+framebuffer 物理地址 `0x9C000000`、stride 4320；内核运行期优先用
+`boot_args->Video`（UEFI GOP 实际地址），ADT 值只作回退。真机只需确认
+屏幕上 `CEPHEUS EARLY 0: fb=boot_args pa=0x...` 打印的地址与 DarwinBoot
+的 `video pa` 是否一致；若出现 `BAD` 则记下 `raw pa` / `w` / `h` / `row`。
 设备树提取方法照抄 nabu `docs/nabu-dts-extract.md`（针对 boot.img 里的 dtb）。
 
 ## 4. OS 卷 UUID（→ board.toml root_match_volume_uuid）
@@ -46,7 +51,9 @@ dmesg | grep -i "mdss\|framebuffer\|s6e3fc"
 ## 5. ADT 生成器（✅ 已完成：scripts/make-cepheus-adt.py）
 
 - 已基于 Lux12138/UniXNU fork 的 make-nabu-adt.py 改造完成，并新增 `/cepheus-fbcon` 节点（补丁 0003 消费：reg=<物理地址 大小> + width/height/stride）
-- **仍需实测**：fbcon 的 reg/size（§3 实测后用 `--fbcon-reg/--fbcon-size` 传入或改脚本默认值，当前是 nabu 占位值 0x9C000000/0xC00000）
+- fbcon 的 reg/size/尺寸已按 cepheus 设备树定为 `0x9C000000/0x2400000`、
+  1080×2340、stride 4320；8796 workflow 显式传这些值。运行期内核以
+  `boot_args->Video` 为准，这里只影响 UEFI 未传 Video 时的回退。
 
 ## 6. CI 里的 fork 地址
 
