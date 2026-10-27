@@ -350,30 +350,42 @@ index 55633ef..33b8b1e 100644
  #endif
  
 diff --git a/pexpert/arm/pe_serial.c b/pexpert/arm/pe_serial.c
-index 53ec736..0385c62 100644
+index 53ec736..a8b50d0 100644
 --- a/pexpert/arm/pe_serial.c
 +++ b/pexpert/arm/pe_serial.c
-@@ -26,6 +26,7 @@
- #include <pexpert/arm/consistent_debug.h>
- #include <pexpert/arm64/board_config.h>
- #include <arm64/proc_reg.h>
-+#include <arm64/cepheus_early.h>
- #include <pexpert/arm/protos.h>
- #include <kern/sched_prim.h>
- #if HIBERNATION
-@@ -897,6 +898,7 @@ fbcon_probe(void)
+@@ -32,6 +32,19 @@
+ #include <machine/pal_hibernate.h>
+ #endif /* HIBERNATION */
+ 
++/*
++ * The early framebuffer console lives in osfmk and its header directory is not
++ * on pexpert's include path, so only the one entry point used here is declared.
++ * Marks 17/18 bracket the fbcon probe: 17 says the console survived
++ * arm_vm_init(), 18 says ml_io_map_wcomb() returned.
++ */
++#if defined(CEPHEUS)
++extern void cepheus_early_mark(unsigned int stage, const char *label);
++#define CEPHEUS_EARLY_MARK(stage, label) cepheus_early_mark((stage), (label))
++#else
++#define CEPHEUS_EARLY_MARK(stage, label) do { } while (0)
++#endif
++
+ struct pe_serial_functions {
+ 	/* Initialize the underlying serial hardware. */
+ 	void (*init) (void);
+@@ -897,6 +910,7 @@ fbcon_probe(void)
  	 * a guess. The node remains the fallback for firmware that passes an empty
  	 * Video, and for boards whose DT is the only source of truth.
  	 */
-+	cepheus_early_mark(17, "fbcon config read; mapping");
++	CEPHEUS_EARLY_MARK(17, "fbcon config read; mapping");
  	if (PE_state.video.v_baseAddr != 0 && PE_state.video.v_width != 0 &&
  	    PE_state.video.v_height != 0 &&
  	    PE_state.video.v_rowBytes >= PE_state.video.v_width * 4) {
-@@ -917,6 +919,7 @@ fbcon_probe(void)
+@@ -917,6 +931,7 @@ fbcon_probe(void)
  		fbcon_stride = adt_stride;
  	}
  
-+	cepheus_early_mark(18, "fbcon mapping returned");
++	CEPHEUS_EARLY_MARK(18, "fbcon mapping returned");
  	if (fbcon_base != NULL) {
  		register_serial_functions(&cepheus_fbcon_serial_functions);
  	}

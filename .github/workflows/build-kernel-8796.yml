@@ -88,9 +88,16 @@ jobs:
         env:
           MAKEFLAGS: ${{ inputs.keep_going == 'false' && '' || '-k' }}
         run: |
+          # Without pipefail the step's status is tee's, not build.sh's, and a
+          # failed compile turns into a green run with no kernel in it.
+          set -o pipefail
           bash build.sh 2>&1 | tee build.log
           echo "=== exit: $? ==="
           grep -c ' error: ' build.log || true
+          # Belt and braces: the release/artifact steps key off this path, so a
+          # build that somehow "succeeds" without producing it must not pass.
+          ls -l fakeroot/System/Library/Kernels/
+          test -n "$(ls fakeroot/System/Library/Kernels/kernel.*.cepheus)"
 
       - name: Verify critical patches were applied
         # blacktop's build.sh treats a patch that no longer applies as a warning
