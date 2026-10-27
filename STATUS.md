@@ -68,10 +68,15 @@
         仍然“成功”、产物里没有内核、release 步骤被静默跳过。现在 Build 步骤
         用 `set -o pipefail` 并断言 `fakeroot/.../kernel.*.cepheus` 真的存在；
         `pe_serial.c` 只前置声明 `cepheus_early_mark()`（`CEPHEUS_EARLY_MARK`）
-      - 8796 CI run `40452271809`（commit `2311005`）从 Build 到 Publish 全部
-        成功，release `k8796-40452271809`：`kernel.development.cepheus`
-        17,240,000 B、`cust-payload.img` 67,108,864 B、`kernel.macho.adt`、
+      - 8796 CI run `40453235702`（commit `12cdc04`）从 Build 到 Publish 全部
+        成功，release `k8796-40453235702`：`kernel.development.cepheus`
+        17,256,384 B、`cust-payload.img` 67,108,864 B、`kernel.macho.adt`、
         `SHA256SUMS`、`xnu-8796-kernel.zip`
+      - 产物侧抽样确认（`k8796-40449958126` 的内核，同一份 0012）：
+        `llvm-nm` 有 `_cepheus_early_relocate` / `_cepheus_early_fb_phys` /
+        `_cepheus_early_fb_bytes`，`strings` 有 `leaving bootstrap TTBR0`、
+        `physmap framebuffer VA live`、`fb outside physmap; console off`；
+        `arm_vm_init` 反汇编里能看到对上述函数的 `bl`。
 - [ ] 真机实测 fbcon 物理地址 / 面板 / 触摸 IC（地址已由设备树确认，运行期以
       `boot_args->Video` 为准；仍缺真机确认）
 - [ ] UEFI 仓库 `uefi-cepheus`（已能出 UniXNU 镜像并推送诊断补丁，待真机验证）
