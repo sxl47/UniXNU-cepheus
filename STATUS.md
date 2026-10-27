@@ -61,6 +61,16 @@
         physmap 是 cacheable，故打点后按 cache line 用 `dc cvac` 清到 PoC
       - `make-cepheus-adt.py` 的 fbcon 默认值改为设备树实测值，workflow 显式传参
       - 新增 `docs/device-capture-checklist.md`：七层信号、文字转写模板、判读表
+      - CI 自身修掉一个假绿：`bash build.sh | tee build.log` 报的是 `tee` 的
+        退出码，`0012` 第一版把 `arm64/cepheus_early.h` 引进 `pe_serial.c`
+        （osfmk 头目录不在 pexpert 的 include path 上）导致编译失败，但 run
+        仍然“成功”、产物里没有内核、release 步骤被静默跳过。现在 Build 步骤
+        用 `set -o pipefail` 并断言 `fakeroot/.../kernel.*.cepheus` 真的存在；
+        `pe_serial.c` 只前置声明 `cepheus_early_mark()`（`CEPHEUS_EARLY_MARK`）
+      - 8796 CI run `40449958126`（commit `0b65004`）从 Build 到 Publish 全部
+        成功，release `k8796-40449958126`：`kernel.development.cepheus`
+        17,240,048 B、`cust-payload.img` 67,108,864 B、`kernel.macho.adt`、
+        `SHA256SUMS`、`xnu-8796-kernel.zip`
 - [ ] 真机实测 fbcon 物理地址 / 面板 / 触摸 IC（地址已由设备树确认，运行期以
       `boot_args->Video` 为准；仍缺真机确认）
 - [ ] UEFI 仓库 `uefi-cepheus`（已能出 UniXNU 镜像并推送诊断补丁，待真机验证）

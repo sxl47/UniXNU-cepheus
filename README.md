@@ -17,6 +17,21 @@
 Android boot image → BootShim → Mu-Silicium UEFI → DarwinBoot → XNU
 ```
 
+## 拿最新 8796 产物
+
+每次 `build-kernel-8796.yml` 成功都会建一个 release，标签就是 run id：
+
+```bash
+gh release list                       # 或看 Actions 页面最后一次成功的 run
+gh release download k8796-<run_id> -D out
+# 公开直链（无需 token）：
+#   https://github.com/sxl47/UniXNU-cepheus/releases/download/k8796-<run_id>/cust-payload.img
+```
+
+`xnu-8796-kernel.zip` 与 Actions artifact 同布局（`out/` + `dxb/build.log`），
+解压后可以用 `sha256sum -c SHA256SUMS` 校验。最近一次全绿：
+run `40449958126`（commit `0b65004`）。
+
 ## 仓库关系
 
 | 仓库 | 作用 |
