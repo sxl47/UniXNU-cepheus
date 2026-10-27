@@ -1,192 +1,8 @@
-diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
---- a/osfmk/arm64/arm_vm_init.c
-+++ b/osfmk/arm64/arm_vm_init.c
-@@ -1825,6 +1825,32 @@
- #define ARM64_PHYSMAP_ALIGNMENT_PADDING (PTOV_TABLE_SIZE * ARM_TT_TWIG_SIZE)
- #endif
- 
-+#if defined(CEPHEUS)
-+/*
-+ * The reserved low-globals/kernel region is excluded from VM allocation.
-+ * Use the otherwise empty 32MB block above low globals and below gVirtBase
-+ * for a Normal-NC framebuffer alias that survives bootstrap TTBR0 teardown.
-+ */
-+#define CEPHEUS_EARLY_FB_VA (VM_MIN_KERNEL_ADDRESS + ARM_TT_L2_SIZE)
-+
-+static void
-+cepheus_early_map_final(void)
-+{
-+	const vm_map_address_t va = CEPHEUS_EARLY_FB_VA;
-+	assert(va + ARM_TT_L2_SIZE <= gVirtBase);
-+	tt_entry_t l1 = cpu_tte[(va & ARM_TT_L1_INDEX_MASK) >> ARM_TT_L1_SHIFT];
-+	assert((l1 & (ARM_TTE_VALID | ARM_TTE_TYPE_MASK)) == (ARM_TTE_VALID | ARM_TTE_TYPE_TABLE));
-+	tt_entry_t *l2 = (tt_entry_t *)phystokv(l1 & ARM_TTE_TABLE_MASK);
-+	tt_entry_t *slot = &l2[(va & ARM_TT_L2_INDEX_MASK) >> ARM_TT_L2_SHIFT];
-+	assert(*slot == ARM_TTE_EMPTY);
-+	*slot = 0x9c000000ULL | ARM_TTE_VALID | ARM_TTE_TYPE_BLOCK |
-+	    ARM_TTE_BLOCK_SH(SH_OUTER_MEMORY) |
-+	    ARM_TTE_BLOCK_ATTRINDX(CACHE_ATTRINDX_WRITECOMB) |
-+	    ARM_TTE_BLOCK_AF | ARM_TTE_BLOCK_PNX | ARM_TTE_BLOCK_NX;
-+	__asm__ volatile("dsb ishst" ::: "memory");
-+}
-+#endif
-+
- void
- arm_vm_init(uint64_t memory_size, boot_args * args)
- {
-@@ -2153,20 +2179,28 @@
- 
- 	arm_set_user_tbi();
- 
-+#if defined(CEPHEUS)
-+	/* phystokv() must still refer to the bootstrap aperture here. */
-+	cepheus_early_map_final();
-+#endif
- 	arm_vm_physmap_init(args);
- 	set_mmu_ttb_alternate(cpu_ttep & TTBR_BADDR_MASK);
- 
- 	ml_enable_monitor();
- 
--	/* The framebuffer VA=PA mapping belongs to the outgoing TTBR0. */
--	cepheus_early_disable();
-+#if defined(CEPHEUS)
-+	/* The final TTBR1 is live; leave the outgoing VA=PA framebuffer alias. */
-+	cepheus_early_relocate(CEPHEUS_EARLY_FB_VA);
-+#endif
- 	set_mmu_ttb(invalid_ttep & TTBR_BADDR_MASK);
- 
- 	flush_mmu_tlb();
-+	cepheus_early_mark(10, "TTBR0 off; TLB flushed");
- 	kva_active = TRUE;
- 	// global table pointers may need to be different due to physical aperture remapping
- 	cpu_tte = (tt_entry_t*)(phystokv(cpu_ttep));
- 	invalid_tte = (tt_entry_t*)(phystokv(invalid_ttep));
-+	cepheus_early_mark(11, "physmap table pointers rebound");
- 
- 	// From here on out, we're off the bootstrap translation tables.
- 
-@@ -2259,7 +2293,9 @@
-     }
- #endif
- #endif
-+	cepheus_early_mark(12, "calling pmap_bootstrap");
- 	pmap_bootstrap(dynamic_memory_begin);
-+	cepheus_early_mark(13, "pmap_bootstrap done");
- 
- 	disable_preemption();
- 
-@@ -2310,6 +2346,7 @@
- 		va_l1 = va_l2_end;
- 		cpu_l1_tte++;
- 	}
-+	cepheus_early_mark(14, "early I/O page tables ready");
- 
- #if defined(KERNEL_INTEGRITY_KTRR) || defined(KERNEL_INTEGRITY_CTRR)
- 	/*
-diff --git a/osfmk/arm64/cepheus_early.c b/osfmk/arm64/cepheus_early.c
---- a/osfmk/arm64/cepheus_early.c
-+++ b/osfmk/arm64/cepheus_early.c
-@@ -2,7 +2,8 @@
-  * Redmi Note 10 Pro bootstrap console. No allocation, locks, ADT parsing or
-  * per-CPU state: panic() can reach this before a current thread exists.
-  * start.s maps the splash framebuffer VA=PA as Normal Non-Cacheable memory.
-- * Stop using that mapping before arm_vm_init tears down bootstrap TTBR0.
-+ * arm_vm_init installs a reserved kernel VA alias before removing TTBR0;
-+ * retain this console until the normal framebuffer serial console is ready.
-  */
- #include <arm64/cepheus_early.h>
- 
-@@ -10,7 +11,8 @@
- #include <stdint.h>
- #include <kern/misc_protos.h>
- 
--#define EARLY_FB ((volatile uint32_t *)(uintptr_t)0x9c000000)
-+static volatile uint32_t *early_fb = (volatile uint32_t *)(uintptr_t)0x9c000000;
-+#define EARLY_FB early_fb
- #define EARLY_WIDTH 1080u
- #define EARLY_HEIGHT 2400u
- #define EARLY_STRIDE (4320u / 4)
-@@ -87,18 +89,21 @@
- void
- cepheus_early_mark(unsigned int stage, const char *label)
- {
--	if (early_disabled || stage > 8) {
-+	if (early_disabled || stage > 20) {
- 		return;
- 	}
--	uint32_t color = 0xff00ff00u | (stage * 28u << 16);
-+	uint32_t color = 0xff00ff00u | ((stage & 7u) * 32u << 16);
- 	for (unsigned int y = EARLY_HEIGHT - 32; y < EARLY_HEIGHT; y++) {
--		for (unsigned int x = stage * 64; x < (stage + 1) * 64; x++) {
-+		for (unsigned int x = stage * 48; x < (stage + 1) * 48; x++) {
- 			EARLY_FB[y * EARLY_STRIDE + x] = color;
- 		}
- 	}
- 	__asm__ volatile("dsb sy" ::: "memory");
- 	cepheus_early_string("CEPHEUS EARLY ");
--	cepheus_early_putc((char)('0' + stage));
-+	if (stage >= 10) {
-+		cepheus_early_putc((char)('0' + stage / 10));
-+	}
-+	cepheus_early_putc((char)('0' + stage % 10));
- 	cepheus_early_string(": ");
- 	cepheus_early_string(label);
- 	cepheus_early_putc('\n');
-@@ -121,9 +126,17 @@
- }
- 
- void
-+cepheus_early_relocate(uint64_t base)
-+{
-+	cepheus_early_mark(8, "leaving bootstrap TTBR0");
-+	early_fb = (volatile uint32_t *)(uintptr_t)base;
-+	__asm__ volatile("dsb sy" ::: "memory");
-+	cepheus_early_mark(9, "kernel framebuffer VA live");
-+}
-+
-+void
- cepheus_early_disable(void)
- {
--	cepheus_early_mark(8, "leaving bootstrap TTBR0");
- 	early_disabled = 1;
- 	__asm__ volatile("dsb sy" ::: "memory");
- }
-diff --git a/osfmk/arm64/cepheus_early.h b/osfmk/arm64/cepheus_early.h
---- a/osfmk/arm64/cepheus_early.h
-+++ b/osfmk/arm64/cepheus_early.h
-@@ -1,14 +1,16 @@
--/* Early screen diagnostics, valid only while the bootstrap TTBR0 is live. */
-+/* Screen diagnostics through bootstrap TTBR0 and the final kernel TTBR1. */
- #ifndef _ARM64_CEPHEUS_EARLY_H_
- #define _ARM64_CEPHEUS_EARLY_H_
- 
- #include <pexpert/arm64/board_config.h>
- #include <stdarg.h>
-+#include <stdint.h>
- 
- #if defined(CEPHEUS)
- void cepheus_early_mark(unsigned int stage, const char *label);
- void cepheus_early_putc(char c);
- void cepheus_early_panic(const char *fmt, va_list *args);
-+void cepheus_early_relocate(uint64_t base);
- void cepheus_early_disable(void);
- #else
- static inline void cepheus_early_mark(unsigned int stage, const char *label)
-diff --git a/osfmk/arm64/Makefile b/osfmk/arm64/Makefile
---- a/osfmk/arm64/Makefile
-+++ b/osfmk/arm64/Makefile
-@@ -40,6 +40,7 @@
- 	monotonic.h \
- 	perfmon_arm64_regs.h \
- 	proc_reg.h \
-+	cepheus_early.h \
- 	asm.h \
- 	tlb.h \
- 	pal_hibernate.h
 diff --git a/osfmk/arm/arm_init.c b/osfmk/arm/arm_init.c
+index ec3e53b..be5e324 100644
 --- a/osfmk/arm/arm_init.c
 +++ b/osfmk/arm/arm_init.c
-@@ -523,6 +523,7 @@
+@@ -532,6 +532,7 @@ arm_init(
  
  	cepheus_early_mark(7, "entering arm_vm_init");
  	arm_vm_init(xmaxmem, args);
@@ -194,7 +10,7 @@ diff --git a/osfmk/arm/arm_init.c b/osfmk/arm/arm_init.c
  
  	if (debug_boot_arg) {
  		patch_low_glo();
-@@ -535,9 +536,15 @@
+@@ -544,9 +545,15 @@ arm_init(
  	PE_consistent_debug_inherit();
  
  	/* Setup debugging output. */
@@ -210,7 +26,331 @@ diff --git a/osfmk/arm/arm_init.c b/osfmk/arm/arm_init.c
  
  	serialmode = 0;
  	if (PE_parse_boot_argn("serial", &serialmode, sizeof(serialmode))) {
+diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
+index 6f192f0..97e2df2 100644
+--- a/osfmk/arm64/arm_vm_init.c
++++ b/osfmk/arm64/arm_vm_init.c
+@@ -2158,8 +2158,46 @@ arm_vm_init(uint64_t memory_size, boot_args * args)
+ 
+ 	ml_enable_monitor();
+ 
+-	/* The framebuffer VA=PA mapping belongs to the outgoing TTBR0. */
++#if defined(CEPHEUS)
++	/*
++	 * The framebuffer's VA=PA mapping belongs to the outgoing TTBR0. Before
++	 * dropping it, move the early console onto the permanent physmap alias of
++	 * the same physical surface. arm_vm_physmap_init() above has already
++	 * mapped the whole RAM window (the splash carveout sits inside it), so
++	 * a PTOV entry describes a real kernel mapping in the tables that survive
++	 * the switch -- no reserved VA and no hand-built TTE required. If firmware
++	 * handed over a framebuffer outside RAM, fall back to switching the
++	 * console off instead of faulting.
++	 */
++	const uintptr_t early_fb_pa = cepheus_early_fb_phys();
++	const uint64_t early_fb_bytes = cepheus_early_fb_bytes();
++	vm_map_address_t early_fb_va = 0;
++
++	/*
++	 * Do not trust phystokv()'s fallback path here: it can synthesise an
++	 * address that was never mapped. Require a PTOV entry that covers the
++	 * whole framebuffer, so the switch below is guaranteed to hit DRAM.
++	 */
++	for (size_t i = 0; i < PTOV_TABLE_SIZE && ptov_table[i].len != 0; i++) {
++		if (early_fb_pa >= ptov_table[i].pa &&
++		    early_fb_pa - ptov_table[i].pa < ptov_table[i].len &&
++		    early_fb_bytes <=
++		    ptov_table[i].len - (early_fb_pa - ptov_table[i].pa)) {
++			early_fb_va = ptov_table[i].va +
++			    (early_fb_pa - ptov_table[i].pa);
++			break;
++		}
++	}
++
++	if (early_fb_va != 0) {
++		cepheus_early_relocate(early_fb_va);
++	} else {
++		cepheus_early_mark(8, "fb outside physmap; console off");
++		cepheus_early_disable();
++	}
++#else
+ 	cepheus_early_disable();
++#endif
+ 	set_mmu_ttb(invalid_ttep & TTBR_BADDR_MASK);
+ 
+ 	flush_mmu_tlb();
+@@ -2167,6 +2205,7 @@ arm_vm_init(uint64_t memory_size, boot_args * args)
+ 	// global table pointers may need to be different due to physical aperture remapping
+ 	cpu_tte = (tt_entry_t*)(phystokv(cpu_ttep));
+ 	invalid_tte = (tt_entry_t*)(phystokv(invalid_ttep));
++	cepheus_early_mark(10, "TTBR0 off; TLB flushed");
+ 
+ 	// From here on out, we're off the bootstrap translation tables.
+ 
+@@ -2259,7 +2298,9 @@ arm_vm_init(uint64_t memory_size, boot_args * args)
+     }
+ #endif
+ #endif
++	cepheus_early_mark(12, "calling pmap_bootstrap");
+ 	pmap_bootstrap(dynamic_memory_begin);
++	cepheus_early_mark(13, "pmap_bootstrap done");
+ 
+ 	disable_preemption();
+ 
+@@ -2310,6 +2351,7 @@ arm_vm_init(uint64_t memory_size, boot_args * args)
+ 		va_l1 = va_l2_end;
+ 		cpu_l1_tte++;
+ 	}
++	cepheus_early_mark(14, "early I/O page tables ready");
+ 
+ #if defined(KERNEL_INTEGRITY_KTRR) || defined(KERNEL_INTEGRITY_CTRR)
+ 	/*
+diff --git a/osfmk/arm64/cepheus_early.c b/osfmk/arm64/cepheus_early.c
+index 9f79343..3e975a2 100644
+--- a/osfmk/arm64/cepheus_early.c
++++ b/osfmk/arm64/cepheus_early.c
+@@ -2,7 +2,9 @@
+  * Redmi Note 10 Pro bootstrap console. No allocation, locks, ADT parsing or
+  * per-CPU state: panic() can reach this before a current thread exists.
+  * start.s maps the splash framebuffer VA=PA as Normal Non-Cacheable memory.
+- * Stop using that mapping before arm_vm_init tears down bootstrap TTBR0.
++ * arm_vm_init moves the console to the permanent physmap alias of the same
++ * surface before dropping bootstrap TTBR0, so the markers keep working through
++ * pmap_bootstrap and serial_init().
+  */
+ #include <arm64/cepheus_early.h>
+ 
+@@ -25,6 +27,16 @@
+ #define EARLY_CELL_W (8u * EARLY_SCALE)
+ #define EARLY_CELL_H (16u * EARLY_SCALE)
+ #define EARLY_BAND 32u
++#define EARLY_MARK_W 48u
++
++/*
++ * Sanity caps for boot_args' Video record. The framebuffer is described by
++ * firmware and then used for size arithmetic (early_fb_bytes()) and for the
++ * physmap coverage test; a garbage row_bytes must not be able to wrap it.
++ */
++#define EARLY_MAX_WIDTH 8192u
++#define EARLY_MAX_HEIGHT 16384u
++#define EARLY_MAX_ROW_BYTES 65536u
+ 
+ static uintptr_t early_fb = EARLY_DEFAULT_FB;
+ static unsigned int early_width = EARLY_DEFAULT_WIDTH;
+@@ -42,6 +54,32 @@ extern unsigned char iso_font[256 * 16];
+ static unsigned int early_row, early_col;
+ static unsigned int early_started, early_disabled, early_panicking;
+ 
++/*
++ * start.s maps the framebuffer Normal Non-Cacheable, so the first markers need
++ * no maintenance. The physmap alias installed by arm_vm_init() is Normal
++ * cacheable; stores through it must be cleaned to the point of coherency or the
++ * display controller keeps scanning the old DRAM contents.
++ */
++#define EARLY_CACHE_LINE 64u
++static unsigned int early_cached;
++
++static void
++cepheus_early_sync(uintptr_t addr, unsigned long bytes)
++{
++	if (!early_cached) {
++		__asm__ volatile("dsb sy" ::: "memory");
++		return;
++	}
++	uintptr_t start = addr & ~(uintptr_t)(EARLY_CACHE_LINE - 1);
++	uintptr_t end = (addr + bytes + EARLY_CACHE_LINE - 1) &
++	    ~(uintptr_t)(EARLY_CACHE_LINE - 1);
++
++	for (uintptr_t line = start; line < end; line += EARLY_CACHE_LINE) {
++		__asm__ volatile("dc cvac, %0" :: "r"(line) : "memory");
++	}
++	__asm__ volatile("dsb sy" ::: "memory");
++}
++
+ static void
+ cepheus_early_clear_row(void)
+ {
+@@ -50,6 +88,7 @@ cepheus_early_clear_row(void)
+ 		for (unsigned int x = 0; x < early_width; x++) {
+ 			line[x] = 0xff000000u;
+ 		}
++		cepheus_early_sync((uintptr_t)line, (unsigned long)early_width * 4u);
+ 	}
+ }
+ 
+@@ -87,6 +126,8 @@ cepheus_early_putc(char c)
+ 					line[gx * EARLY_SCALE + sx] = pixel;
+ 				}
+ 			}
++			cepheus_early_sync((uintptr_t)line,
++			    (unsigned long)EARLY_CELL_W * 4u);
+ 		}
+ 	}
+ 	early_col++;
+@@ -100,26 +141,47 @@ cepheus_early_string(const char *s)
+ 	}
+ }
+ 
+-void
+-cepheus_early_mark(unsigned int stage, const char *label)
++/*
++ * Paint one checkpoint cell in the bottom band. Kept separate from
++ * cepheus_early_mark() because the stage-0 report is printed by
++ * cepheus_early_video() itself: it must come out as one line, and mark()
++ * terminates its label with a newline.
++ */
++static void
++cepheus_early_paint(unsigned int stage)
+ {
+-	if (early_disabled || stage > 8) {
+-		return;
+-	}
+-	uint32_t color = 0xff00ff00u | (stage * 28u << 16);
+-	unsigned int x_end = (stage + 1) * 64;
++	uint32_t color = 0xff00ff00u | ((stage & 7u) * 32u << 16);
++	unsigned int x_start = stage * EARLY_MARK_W;
++	unsigned int x_end = x_start + EARLY_MARK_W;
+ 
+ 	if (x_end > early_width) {
+ 		x_end = early_width;
+ 	}
++	if (x_start >= x_end) {
++		return;
++	}
+ 	for (unsigned int y = early_height - EARLY_BAND; y < early_height; y++) {
+-		for (unsigned int x = stage * 64; x < x_end; x++) {
++		for (unsigned int x = x_start; x < x_end; x++) {
+ 			EARLY_PTR[y * EARLY_STRIDE + x] = color;
+ 		}
++		cepheus_early_sync(
++		    (uintptr_t)(EARLY_PTR + y * EARLY_STRIDE + x_start),
++		    (unsigned long)(x_end - x_start) * 4u);
+ 	}
+-	__asm__ volatile("dsb sy" ::: "memory");
++}
++
++void
++cepheus_early_mark(unsigned int stage, const char *label)
++{
++	if (early_disabled || stage > 20) {
++		return;
++	}
++	cepheus_early_paint(stage);
+ 	cepheus_early_string("CEPHEUS EARLY ");
+-	cepheus_early_putc((char)('0' + stage));
++	if (stage >= 10) {
++		cepheus_early_putc((char)('0' + stage / 10));
++	}
++	cepheus_early_putc((char)('0' + stage % 10));
+ 	cepheus_early_string(": ");
+ 	cepheus_early_string(label);
+ 	cepheus_early_putc('\n');
+@@ -162,9 +224,13 @@ cepheus_early_video(uintptr_t base, unsigned int row_bytes,
+     unsigned int width, unsigned int height)
+ {
+ 	/* One full cell plus the bottom band has to fit, or the console has zero
+-	 * rows and the first newline would divide by zero. */
++	 * rows and the first newline would divide by zero. The upper bounds keep
++	 * a bogus Video record from overflowing the size/coverage arithmetic. */
+ 	int usable = base != 0 && width >= EARLY_CELL_W &&
+-	    height >= EARLY_BAND + EARLY_CELL_H && row_bytes >= width * 4u;
++	    width <= EARLY_MAX_WIDTH &&
++	    height >= EARLY_BAND + EARLY_CELL_H &&
++	    height <= EARLY_MAX_HEIGHT &&
++	    row_bytes >= width * 4u && row_bytes <= EARLY_MAX_ROW_BYTES;
+ 
+ 	if (usable) {
+ 		early_fb = base;
+@@ -178,7 +244,9 @@ cepheus_early_video(uintptr_t base, unsigned int row_bytes,
+ 		early_started = 0;
+ 	}
+ 
+-	cepheus_early_mark(0, usable ? "fb=boot_args pa=0x" :
++	cepheus_early_paint(0);
++	cepheus_early_string("CEPHEUS EARLY 0: ");
++	cepheus_early_string(usable ? "fb=boot_args pa=0x" :
+ 	    "fb=boot_args BAD, using 0x");
+ 	cepheus_early_hex(early_fb);
+ 	if (usable) {
+@@ -217,10 +285,37 @@ cepheus_early_panic(const char *fmt, va_list *args)
+ 	__asm__ volatile("dsb sy" ::: "memory");
+ }
+ 
++uintptr_t
++cepheus_early_fb_phys(void)
++{
++	return early_fb;
++}
++
++uint64_t
++cepheus_early_fb_bytes(void)
++{
++	return (uint64_t)early_row_bytes * early_height;
++}
++
++/*
++ * Switch the console from start.s's VA=PA window to the permanent kernel
++ * mapping of the same physical framebuffer. Called from arm_vm_init() while
++ * bootstrap TTBR0 is still live: mark 8 uses the old window, mark 9 proves the
++ * new one works, and everything after mark 10 runs only with TTBR1.
++ */
++void
++cepheus_early_relocate(uintptr_t base)
++{
++	cepheus_early_mark(8, "leaving bootstrap TTBR0");
++	early_fb = base;
++	early_cached = 1;
++	__asm__ volatile("dsb sy" ::: "memory");
++	cepheus_early_mark(9, "physmap framebuffer VA live");
++}
++
+ void
+ cepheus_early_disable(void)
+ {
+-	cepheus_early_mark(8, "leaving bootstrap TTBR0");
+ 	early_disabled = 1;
+ 	__asm__ volatile("dsb sy" ::: "memory");
+ }
+diff --git a/osfmk/arm64/cepheus_early.h b/osfmk/arm64/cepheus_early.h
+index 55633ef..33b8b1e 100644
+--- a/osfmk/arm64/cepheus_early.h
++++ b/osfmk/arm64/cepheus_early.h
+@@ -1,4 +1,4 @@
+-/* Early screen diagnostics, valid only while the bootstrap TTBR0 is live. */
++/* Screen diagnostics through bootstrap TTBR0 and the kernel physmap. */
+ #ifndef _ARM64_CEPHEUS_EARLY_H_
+ #define _ARM64_CEPHEUS_EARLY_H_
+ 
+@@ -12,6 +12,9 @@ void cepheus_early_video(uintptr_t base, unsigned int row_bytes,
+ void cepheus_early_mark(unsigned int stage, const char *label);
+ void cepheus_early_putc(char c);
+ void cepheus_early_panic(const char *fmt, va_list *args);
++uintptr_t cepheus_early_fb_phys(void);
++uint64_t cepheus_early_fb_bytes(void);
++void cepheus_early_relocate(uintptr_t base);
+ void cepheus_early_disable(void);
+ #else
+ static inline void cepheus_early_video(uintptr_t base, unsigned int row_bytes,
+@@ -27,6 +30,18 @@ static inline void cepheus_early_mark(unsigned int stage, const char *label)
+ 	(void)stage;
+ 	(void)label;
+ }
++static inline uintptr_t cepheus_early_fb_phys(void)
++{
++	return 0;
++}
++static inline uint64_t cepheus_early_fb_bytes(void)
++{
++	return 0;
++}
++static inline void cepheus_early_relocate(uintptr_t base)
++{
++	(void)base;
++}
+ static inline void cepheus_early_disable(void) {}
+ #endif
+ 
 diff --git a/pexpert/arm/pe_serial.c b/pexpert/arm/pe_serial.c
+index 53ec736..0385c62 100644
 --- a/pexpert/arm/pe_serial.c
 +++ b/pexpert/arm/pe_serial.c
 @@ -26,6 +26,7 @@
@@ -221,12 +361,18 @@ diff --git a/pexpert/arm/pe_serial.c b/pexpert/arm/pe_serial.c
  #include <pexpert/arm/protos.h>
  #include <kern/sched_prim.h>
  #if HIBERNATION
-@@ -833,7 +834,9 @@
- 	if (!fbcon_width || !fbcon_height || fbcon_stride < fbcon_width * 4) {
- 		return;
- 	}
+@@ -897,6 +898,7 @@ fbcon_probe(void)
+ 	 * a guess. The node remains the fallback for firmware that passes an empty
+ 	 * Video, and for boards whose DT is the only source of truth.
+ 	 */
 +	cepheus_early_mark(17, "fbcon config read; mapping");
- 	fbcon_base = (volatile uint32_t *)ml_io_map_wcomb(reg[0], reg[1]);
+ 	if (PE_state.video.v_baseAddr != 0 && PE_state.video.v_width != 0 &&
+ 	    PE_state.video.v_height != 0 &&
+ 	    PE_state.video.v_rowBytes >= PE_state.video.v_width * 4) {
+@@ -917,6 +919,7 @@ fbcon_probe(void)
+ 		fbcon_stride = adt_stride;
+ 	}
+ 
 +	cepheus_early_mark(18, "fbcon mapping returned");
  	if (fbcon_base != NULL) {
  		register_serial_functions(&cepheus_fbcon_serial_functions);

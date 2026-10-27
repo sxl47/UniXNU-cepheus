@@ -49,8 +49,16 @@
         补丁按 locale 排序，`0010a-` 在 en_US/zh_CN 下会排到 `0010-` **前面**，
         那样补丁会静默 `Skipping`
       - `build-kernel-8796.yml` 新增“关键补丁必须应用”断言
-        （`0003` / `0004` / `0006` / `0010` / `0010z` / `0028`），
+        （`0003` / `0004` / `0006` / `0010` / `0010z` / `0012` / `0028`），
         补丁被 `Skipping` 即失败
+      - 重写补丁 `0012`（原先因 0003/0010z 的文件结构变化被静默跳过）：
+        `arm_vm_init()` 在关掉 bootstrap TTBR0 之前，把早期控制台切到
+        **同一物理帧的 physmap 别名**（查 `ptov_table`，要求整帧被同一段覆盖；
+        不在 RAM 窗口则打印 `fb outside physmap` 后关闭，避免 fault），
+        因此 `EARLY 8..20` 可见：8=切走前、9=physmap 生效、
+        10..14=`arm_vm_init` 内部（TTBR0 关、指针重绑、`pmap_bootstrap`、
+        I/O 页表）、15/16/19/20=`serial_init` 前后、17/18=fbcon 探测/映射。
+        physmap 是 cacheable，故打点后按 cache line 用 `dc cvac` 清到 PoC
       - `make-cepheus-adt.py` 的 fbcon 默认值改为设备树实测值，workflow 显式传参
       - 新增 `docs/device-capture-checklist.md`：七层信号、文字转写模板、判读表
 - [ ] 真机实测 fbcon 物理地址 / 面板 / 触摸 IC（地址已由设备树确认，运行期以

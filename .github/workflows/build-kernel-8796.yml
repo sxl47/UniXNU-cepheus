@@ -107,6 +107,8 @@ jobs:
         #        ('z' suffix, not 'a': patch order is a locale collation, and in
         #        en_US/zh_CN '0010a-' sorts BEFORE '0010-', which would make this
         #        patch fail and be skipped silently)
+        # 0012   keeps the early console alive across the TTBR0 -> physmap switch
+        #        (marks 8..20, i.e. visibility through pmap_bootstrap/serial_init)
         # 0028   raw UFS root device (otherwise no root at all)
         if: always()
         run: |
@@ -121,6 +123,7 @@ jobs:
             0006-nabu-master-config-open-source-asm-pmap \
             0010-nabu-early-framebuffer-debug \
             0010z-cepheus-early-framebuffer-from-bootargs \
+            0012-nabu-keep-debug-console-after-ttbr0 \
             0028-nabu-ufs-root-device
           do
             if grep -q "Applying patch:.*${p}\.patch" "$LOG"; then
