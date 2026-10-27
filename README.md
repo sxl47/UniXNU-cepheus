@@ -30,7 +30,7 @@ gh release download k8796-<run_id> -D out
 
 `xnu-8796-kernel.zip` 与 Actions artifact 同布局（`out/` + `dxb/build.log`），
 解压后可以用 `sha256sum -c SHA256SUMS` 校验。最近一次全绿：
-run `40449958126`（commit `0b65004`）。
+run `40452271809`（commit `2311005`）。
 
 ## 仓库关系
 
