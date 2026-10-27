@@ -44,7 +44,7 @@ fastboot boot Mu-cepheus-unixnu.img    # 临时引导，不写盘
 | B | DarwinBoot 日志 + **屏幕最底部**一条绿色横条 | 交接桩执行到 `br x1` 之前 | `Video[0]`（UEFI GOP） |
 | C | 屏幕**最左下角**一块 64×32 像素白色小方块 | 内核入口第一条指令执行了（`start.s`，无栈无页表） | `boot_args->Video`，无效才退回 `0x9c000000` |
 | D | 顶部一行 `CEPHEUS EARLY 0: video pa=0x... w=1080 h=2340 row=4320` | `arm_init()` 已进入；左下角色块前 48 px 变绿，C 侧打点接管同一屏幕 | `boot_args->Video` |
-| E | 底部 21 个 48 px 宽色块（stage 0..20），伴随 `CEPHEUS EARLY 0..20: <label>` | 内核逐段推进；停在第几格就是卡在第几个检查点之后 | 前 8 格 `boot_args->Video`，8 之后为同一物理帧的 physmap 别名 |
+| E | 底部 20 个 48 px 宽色块（stage 0..19），伴随 `CEPHEUS EARLY 0..19: <label>` | 内核逐段推进；停在第几格就是卡在第几个检查点之后 | 前 8 格 `boot_args->Video`，8 之后为同一物理帧的 physmap 别名 |
 | F | 整屏**深蓝底** + `cepheus fbcon ready: pa=0x... WxH row N` | `serial_init()` 走到 framebuffer 控制台注册，之后的 kprintf 都可见 | `PE_state.video`，回退 ADT |
 | G | 蓝底上的内核日志/panic 文本 | 正常启动或明确 panic | 同上 |
 
@@ -69,7 +69,8 @@ fastboot boot Mu-cepheus-unixnu.img    # 临时引导，不写盘
     情况下内核都还在跑，问题只在早期控制台，不在启动流程本身。
 - **10..14** 在 `arm_vm_init` 内部（TTBR0 关闭、physmap 指针重绑、`pmap_bootstrap`、
   I/O 页表）；**15/16** 在 `serial_init()` 两侧；**17/18** 在 fbcon 探测/映射处；
-  **19/20** 在 `serial_init()` 返回和 kprintf 启动完成之后。
+  **19** 在 `serial_init()` 返回之后；19 一出现、fbcon 已注册，就把整个屏幕交给
+  fbcon（同一物理帧上的两套文字栅格继续互画只会互相覆盖）。
 - **F 的蓝底**是“内核 fbcon 真的接管了屏幕”的照相级信号；黑底继续滚字说明还在用早期打点。
 
 ## 4. 文字转写模板
@@ -90,7 +91,7 @@ fastboot boot Mu-cepheus-unixnu.img    # 临时引导，不写盘
 [D] 顶部 EARLY 0 整行原文（应为一行，含 w=/h=/row=）：________________
     是否出现 "BAD"：是 / 否（若是，再抄下一行 raw pa=/w=/h=/row=）
     ______________________________________
-[E] 底部色块点亮到第几格（0..20，每格 48 px）：____
+[E] 底部色块点亮到第几格（0..19，每格 48 px）：____
     每个 EARLY 行原文：
     ______________________________________
     ______________________________________
@@ -117,7 +118,7 @@ fastboot boot Mu-cepheus-unixnu.img    # 临时引导，不写盘
 | 停在 EARLY 10..14 | `arm_vm_init` 内某段挂了 | 记 n：10 关 TTBR0、12/13 pmap_bootstrap、14 I/O 页表 |
 | 停在 EARLY 15/16 | `arm_vm_init` 已返回，卡在 `serial_init()` 入口或内部 | 对照 17/18 判断是否进到 fbcon 探测 |
 | 停在 EARLY 17/18 | fbcon 配置读了、`ml_io_map_wcomb` 没返回或注册失败 | 记录它的 pa 与 ADT 值 |
-| 出现 EARLY 20 且有蓝屏 | `serial_init()` 与 kprintf 均已成功 | 继续看后续 kprintf |
+| 出现 EARLY 19 且有蓝屏 | `serial_init()` 已返回并交给 fbcon | 继续看后续 kprintf |
 | 出现 `CEPHEUS EARLY PANIC:` | 直接读 panic 文本 | 按文本修 |
 | 出现 F 蓝屏 | `serial_init()` 成功，fbcon 接管 | 继续看后续 kprintf |
 | 蓝屏后停在 `launchd` 相关行 | Stage 6（无 root 卷镜像）预期行为 | 需要 iOS 16.x root 卷 |

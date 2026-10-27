@@ -1,5 +1,5 @@
 diff --git a/osfmk/arm/arm_init.c b/osfmk/arm/arm_init.c
-index ec3e53b..be5e324 100644
+index ec3e53b..8bfaed6 100644
 --- a/osfmk/arm/arm_init.c
 +++ b/osfmk/arm/arm_init.c
 @@ -532,6 +532,7 @@ arm_init(
@@ -10,22 +10,24 @@ index ec3e53b..be5e324 100644
  
  	if (debug_boot_arg) {
  		patch_low_glo();
-@@ -544,9 +545,15 @@ arm_init(
+@@ -544,7 +545,17 @@ arm_init(
  	PE_consistent_debug_inherit();
  
  	/* Setup debugging output. */
 +	cepheus_early_mark(16, "calling serial_init");
  	const unsigned int serial_exists = serial_init();
 +	cepheus_early_mark(19, "serial_init returned");
- 	kernel_startup_initialize_upto(STARTUP_SUB_KPRINTF);
- 	kprintf("kprintf initialized\n");
-+	cepheus_early_mark(20, "kprintf startup complete");
++	/*
++	 * framebuffer serial console is registered: hand the screen over now.
++	 * Leaving the early console on would keep painting its own text grid over
++	 * the fbcon output (two mappings, two layouts, same surface).
++	 */
 +	if (serial_exists) {
 +		cepheus_early_disable();
 +	}
+ 	kernel_startup_initialize_upto(STARTUP_SUB_KPRINTF);
+ 	kprintf("kprintf initialized\n");
  
- 	serialmode = 0;
- 	if (PE_parse_boot_argn("serial", &serialmode, sizeof(serialmode))) {
 diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
 index 6f192f0..97e2df2 100644
 --- a/osfmk/arm64/arm_vm_init.c

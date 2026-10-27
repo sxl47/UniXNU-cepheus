@@ -55,9 +55,10 @@
         `arm_vm_init()` 在关掉 bootstrap TTBR0 之前，把早期控制台切到
         **同一物理帧的 physmap 别名**（查 `ptov_table`，要求整帧被同一段覆盖；
         不在 RAM 窗口则打印 `fb outside physmap` 后关闭，避免 fault），
-        因此 `EARLY 8..20` 可见：8=切走前、9=physmap 生效、
+        因此 `EARLY 8..19` 可见：8=切走前、9=physmap 生效、
         10..14=`arm_vm_init` 内部（TTBR0 关、指针重绑、`pmap_bootstrap`、
-        I/O 页表）、15/16/19/20=`serial_init` 前后、17/18=fbcon 探测/映射。
+        I/O 页表）、15/16/19=`serial_init` 前后、17/18=fbcon 探测/映射；
+        19 打过就关闭早期控制台，屏幕整块交给 fbcon（避免两套文字栅格互画）。
         physmap 是 cacheable，故打点后按 cache line 用 `dc cvac` 清到 PoC
       - `make-cepheus-adt.py` 的 fbcon 默认值改为设备树实测值，workflow 显式传参
       - 新增 `docs/device-capture-checklist.md`：七层信号、文字转写模板、判读表
