@@ -43,7 +43,7 @@ fastboot boot Mu-cepheus-unixnu.img    # 临时引导，不写盘
 | A | UEFI 菜单 | 固件正常 | — |
 | B | DarwinBoot 日志 + **屏幕最底部**一条绿色横条 | 交接桩执行到 `br x1` 之前 | `Video[0]`（UEFI GOP） |
 | C | 屏幕**最左下角**一块 64×32 像素白色小方块 | 内核入口第一条指令执行了（`start.s`，无栈无页表） | `boot_args->Video`，无效才退回 `0x9c000000` |
-| D | 顶部一行 `CEPHEUS EARLY 0: fb=boot_args pa=0x... w=0x... h=0x... row=0x...` | `arm_init()` 已进入；左下角色块前 48 px 变绿，C 侧打点接管同一屏幕 | `boot_args->Video` |
+| D | 顶部一行 `CEPHEUS EARLY 0: video pa=0x... w=1080 h=2340 row=4320` | `arm_init()` 已进入；左下角色块前 48 px 变绿，C 侧打点接管同一屏幕 | `boot_args->Video` |
 | E | 底部 21 个 48 px 宽色块（stage 0..20），伴随 `CEPHEUS EARLY 0..20: <label>` | 内核逐段推进；停在第几格就是卡在第几个检查点之后 | 前 8 格 `boot_args->Video`，8 之后为同一物理帧的 physmap 别名 |
 | F | 整屏**深蓝底** + `cepheus fbcon ready: pa=0x... WxH row N` | `serial_init()` 走到 framebuffer 控制台注册，之后的 kprintf 都可见 | `PE_state.video`，回退 ADT |
 | G | 蓝底上的内核日志/panic 文本 | 正常启动或明确 panic | 同上 |
@@ -56,8 +56,10 @@ fastboot boot Mu-cepheus-unixnu.img    # 临时引导，不写盘
   - C 是纯汇编，在 C 代码、页表、串口之前就画，证明**内核入口执行了**。
   - D 是 `arm_init()` 的第一件事，同时把 w/h/row 报出来，证明**早期 C 环境可用**。
   - 两者地址一致且可见 ⇒ UEFI 交接的 framebuffer 正确。
-  - 若 D 显示 `fb=boot_args BAD, using 0x... raw pa=0x...` ⇒ 交接的 Video
-    不可用，内核退回了 `0x9c000000`；把 raw 值记下来就是下一版该修的地方。
+  - 若 D 显示 `... video BAD`，下一行是 `raw pa=0x... w=... h=... row=...` ⇒
+    交接的 Video 不可用，内核退回了 `0x9c000000`；把 raw 值记下来就是下一版
+    该修的地方。
+  - `w` / `h` / `row` 是十进制像素/字节数，`pa` 是十六进制物理地址。
 - **EARLY 8 → 9 是地址空间切换的证明**：
   - 8 写在 `arm_vm_init()` 关掉 bootstrap TTBR0 之前，仍走 VA=PA。
   - 9 写在切换到 physmap 别名之后；9 出现 ⇒ 内核已经用“能活到最后的映射”继续
@@ -85,8 +87,9 @@ fastboot boot Mu-cepheus-unixnu.img    # 临时引导，不写盘
     ID_AA64PFR0_EL1  0x________
     其他行：____________________________________________
 [C] 左下角白色/绿色小方块：有 / 无
-[D] 顶部 EARLY 0 整行原文（含 w=/h=/row=）：________________________
-    是否出现 "BAD"：是 / 否
+[D] 顶部 EARLY 0 整行原文（应为一行，含 w=/h=/row=）：________________
+    是否出现 "BAD"：是 / 否（若是，再抄下一行 raw pa=/w=/h=/row=）
+    ______________________________________
 [E] 底部色块点亮到第几格（0..20，每格 48 px）：____
     每个 EARLY 行原文：
     ______________________________________

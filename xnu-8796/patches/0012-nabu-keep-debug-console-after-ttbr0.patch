@@ -105,7 +105,7 @@ index 6f192f0..97e2df2 100644
  #if defined(KERNEL_INTEGRITY_KTRR) || defined(KERNEL_INTEGRITY_CTRR)
  	/*
 diff --git a/osfmk/arm64/cepheus_early.c b/osfmk/arm64/cepheus_early.c
-index 9f79343..3e975a2 100644
+index 9f79343..eaf0d9b 100644
 --- a/osfmk/arm64/cepheus_early.c
 +++ b/osfmk/arm64/cepheus_early.c
 @@ -2,7 +2,9 @@
@@ -244,7 +244,28 @@ index 9f79343..3e975a2 100644
  	cepheus_early_string(": ");
  	cepheus_early_string(label);
  	cepheus_early_putc('\n');
-@@ -162,9 +224,13 @@ cepheus_early_video(uintptr_t base, unsigned int row_bytes,
+@@ -142,9 +204,18 @@ cepheus_early_hex(uintptr_t v)
+ }
+ 
+ static void
+-cepheus_early_hex32(unsigned int v)
++cepheus_early_dec(unsigned int v)
+ {
+-	cepheus_early_hex_digits(v, 8);
++	char digits[10];
++	unsigned int n = 0;
++
++	do {
++		digits[n++] = (char)('0' + v % 10u);
++		v /= 10u;
++	} while (v != 0);
++	while (n != 0) {
++		cepheus_early_putc(digits[--n]);
++	}
+ }
+ 
+ /*
+@@ -162,9 +233,13 @@ cepheus_early_video(uintptr_t base, unsigned int row_bytes,
      unsigned int width, unsigned int height)
  {
  	/* One full cell plus the bottom band has to fit, or the console has zero
@@ -260,18 +281,52 @@ index 9f79343..3e975a2 100644
  
  	if (usable) {
  		early_fb = base;
-@@ -178,7 +244,9 @@ cepheus_early_video(uintptr_t base, unsigned int row_bytes,
+@@ -178,25 +253,28 @@ cepheus_early_video(uintptr_t base, unsigned int row_bytes,
  		early_started = 0;
  	}
  
 -	cepheus_early_mark(0, usable ? "fb=boot_args pa=0x" :
+-	    "fb=boot_args BAD, using 0x");
+-	cepheus_early_hex(early_fb);
 +	cepheus_early_paint(0);
-+	cepheus_early_string("CEPHEUS EARLY 0: ");
-+	cepheus_early_string(usable ? "fb=boot_args pa=0x" :
- 	    "fb=boot_args BAD, using 0x");
- 	cepheus_early_hex(early_fb);
++	cepheus_early_string("CEPHEUS EARLY 0: video ");
  	if (usable) {
-@@ -217,10 +285,37 @@ cepheus_early_panic(const char *fmt, va_list *args)
+-		cepheus_early_string(" w=0x");
+-		cepheus_early_hex32(early_width);
+-		cepheus_early_string(" h=0x");
+-		cepheus_early_hex32(early_height);
+-		cepheus_early_string(" row=0x");
+-		cepheus_early_hex32(early_row_bytes);
++		/* 67 columns at 1080 px; keep this on one line so a photograph of the
++		 * screen can be transcribed without guessing where a number split. */
++		cepheus_early_string("pa=0x");
++		cepheus_early_hex(early_fb);
++		cepheus_early_string(" w=");
++		cepheus_early_dec(early_width);
++		cepheus_early_string(" h=");
++		cepheus_early_dec(early_height);
++		cepheus_early_string(" row=");
++		cepheus_early_dec(early_row_bytes);
+ 	} else {
+-		cepheus_early_string(" raw pa=0x");
++		cepheus_early_string("BAD\nraw pa=0x");
+ 		cepheus_early_hex(base);
+-		cepheus_early_string(" w=0x");
+-		cepheus_early_hex32(width);
+-		cepheus_early_string(" h=0x");
+-		cepheus_early_hex32(height);
+-		cepheus_early_string(" row=0x");
+-		cepheus_early_hex32(row_bytes);
++		cepheus_early_string(" w=");
++		cepheus_early_dec(width);
++		cepheus_early_string(" h=");
++		cepheus_early_dec(height);
++		cepheus_early_string(" row=");
++		cepheus_early_dec(row_bytes);
+ 	}
+ 	cepheus_early_putc('\n');
+ }
+@@ -217,10 +295,37 @@ cepheus_early_panic(const char *fmt, va_list *args)
  	__asm__ volatile("dsb sy" ::: "memory");
  }
  
@@ -293,20 +348,20 @@ index 9f79343..3e975a2 100644
 + * bootstrap TTBR0 is still live: mark 8 uses the old window, mark 9 proves the
 + * new one works, and everything after mark 10 runs only with TTBR1.
 + */
-+void
+ void
+-cepheus_early_disable(void)
 +cepheus_early_relocate(uintptr_t base)
-+{
-+	cepheus_early_mark(8, "leaving bootstrap TTBR0");
+ {
+ 	cepheus_early_mark(8, "leaving bootstrap TTBR0");
 +	early_fb = base;
 +	early_cached = 1;
 +	__asm__ volatile("dsb sy" ::: "memory");
 +	cepheus_early_mark(9, "physmap framebuffer VA live");
 +}
 +
- void
- cepheus_early_disable(void)
- {
--	cepheus_early_mark(8, "leaving bootstrap TTBR0");
++void
++cepheus_early_disable(void)
++{
  	early_disabled = 1;
  	__asm__ volatile("dsb sy" ::: "memory");
  }

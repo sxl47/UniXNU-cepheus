@@ -36,7 +36,7 @@ dmesg | grep -i "mdss\|framebuffer\|s6e3fc"
 `cont_splash_region@9c000000` 的 `reg = <0x9c000000 0x2400000>`，即
 framebuffer 物理地址 `0x9C000000`、stride 4320；内核运行期优先用
 `boot_args->Video`（UEFI GOP 实际地址），ADT 值只作回退。真机只需确认
-屏幕上 `CEPHEUS EARLY 0: fb=boot_args pa=0x...` 打印的地址与 DarwinBoot
+屏幕上 `CEPHEUS EARLY 0: video pa=0x...` 打印的地址与 DarwinBoot
 的 `video pa` 是否一致；若出现 `BAD` 则记下 `raw pa` / `w` / `h` / `row`。
 设备树提取方法照抄 nabu `docs/nabu-dts-extract.md`（针对 boot.img 里的 dtb）。
 

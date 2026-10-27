@@ -59,7 +59,7 @@ run `40449958126`（commit `0b65004`）。
 | A | UEFI 菜单 | 固件正常 |
 | B | DarwinBoot 日志 + **底部**绿条 | 交接桩执行；`video pa` / `entry pa` 不再被绿条遮住 |
 | C | 左下角 64×32 白/绿小方块 | `start.s` 第一条指令执行（无栈无页表；直接读 `boot_args->Video`，无效才退回 `0x9c000000`） |
-| D | `CEPHEUS EARLY 0: fb=boot_args pa=0x... w=... h=... row=...` | `arm_init()` 已进入，C 侧打点接管同一块屏幕 |
+| D | `CEPHEUS EARLY 0: video pa=0x... w=1080 h=2340 row=4320`（一行） | `arm_init()` 已进入，C 侧打点接管同一块屏幕 |
 | E | 底部 21 格 48 px 色块 + `CEPHEUS EARLY 0..20` | 内核逐段推进，停在第几格就是卡在哪个检查点；8/9 之间是 TTBR0 → physmap 的切换 |
 | F | 深蓝底 + `cepheus fbcon ready: pa=0x...` | `serial_init()` 注册 framebuffer 控制台成功 |
 | G | 蓝底内核日志/panic | 后续输出可见 |
