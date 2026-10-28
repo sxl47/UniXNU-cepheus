@@ -238,7 +238,7 @@ index 19eb823..4c56dbf 100644
  	DECLARE("SR_RESTORE_TCR_EL1", offsetof(struct sysreg_restore, tcr_el1));
  
 diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
-index 289802c..14be8df 100644
+index d0cdb50..8f7344a 100644
 --- a/osfmk/arm64/start.s
 +++ b/osfmk/arm64/start.s
 @@ -464,11 +464,32 @@ LEXT(start_first_cpu)
@@ -276,3 +276,114 @@ index 289802c..14be8df 100644
  Lcepheus_mark_row:
  	mov		x3, #64
  	mov		x5, x0
+@@ -481,6 +502,68 @@ Lcepheus_mark_pixel:
+ 	b.ne	Lcepheus_mark_row
+ 	dsb		sy
+ #endif
++#endif
++
++/*
++ * Assembly checkpoints: paint a 64x8 band near the bottom of the
++ * framebuffer. Uses only x1-x7 (never x0: the cold path keeps the boot
++ * args KVA in x0 right up to the ret into arm_init).
++ *
++ * CEPHEUS_CP_V: pre-MMU only. Reads the base/row/height straight out of
++ * boot_args->Video (x20 is still the boot args physical address) and
++ * writes the corresponding physical address.
++ *
++ * CEPHEUS_CP_C: post-MMU. Writes the constant VA of the splash V=P block
++ * mapping (0x9c000000/4320, confirmed on hardware: video pa 0x9c000000),
++ * because x20 is a physical address and must not be dereferenced once
++ * the bootstrap MMU tables are live.
++ */
++.macro CEPHEUS_CP_V offs, color
++	ldr	x4, [x20, BA_VIDEO_ROW_BYTES]
++	ldr	x5, [x20, BA_VIDEO_HEIGHT]
++	ldr	x6, [x20, BA_VIDEO_BASE]
++	cbz	x6, Lcp\@_done
++	cbz	x4, Lcp\@_done
++	cmp	x5, #(\offs + 8)
++	b.ls	Lcp\@_done
++	sub	x5, x5, #(\offs)
++	mul	x5, x5, x4
++	add	x5, x5, x6
++	MOV64	x7, \color
++	mov	x2, #8
++Lcp\@_row:
++	mov	x1, #64
++	mov	x3, x5
++Lcp\@_px:
++	str	w7, [x3], #4
++	subs	x1, x1, #1
++	b.ne	Lcp\@_px
++	add	x5, x5, x4
++	subs	x2, x2, #1
++	b.ne	Lcp\@_row
++	dsb	sy
++Lcp\@_done:
++.endm
++
++.macro CEPHEUS_CP_C row, color
++	MOV64	x4, (0x9c000000 + (\row) * 4320)
++	mov	x5, #4320
++	MOV64	x7, \color
++	mov	x2, #8
++Lcp\@_row:
++	mov	x1, #64
++	mov	x3, x5
++Lcp\@_px:
++	str	w7, [x3], #4
++	subs	x1, x1, #1
++	b.ne	Lcp\@_px
++	add	x5, x5, x4
++	subs	x2, x2, #1
++	b.ne	Lcp\@_row
++	dsb	sy
++Lcp\@_done:
++.endm
++
+ 
+ 	// Set low reset vector before attempting any loads
+ 	adrp	x0, EXT(LowExceptionVectorBase)@page
+@@ -494,6 +577,9 @@ Lcepheus_mark_pixel:
+ 	ldr		x24, [x20, BA_MEM_SIZE]				// Get the physical memory size
+ 	adrp	x25, EXT(bootstrap_pagetables)@page	// Get the start of the page tables
+ 	ldr		x26, [x20, BA_BOOT_FLAGS]			// Get the kernel boot flags
++#if defined(CEPHEUS)
++	CEPHEUS_CP_V	40, 0xFF00A5FF
++#endif
+ 
+ 	// Clear the registers that will be used to store the userspace thread pointer and CPU number.
+ 	// We may not actually be booting from ordinal CPU 0, so this register will be updated
+@@ -648,6 +734,10 @@ Lkernelcache_base_found:
+ 	/* Ensure TTEs are visible */
+ 	dsb		ish
+ 
++#if defined(CEPHEUS)
++	CEPHEUS_CP_V	48, 0xFFFF00FF
++#endif
++
+ 
+ 	b		common_start
+ 
+@@ -781,6 +871,10 @@ common_start:
+ 	MSR_SCTLR_EL1_X0
+ 	isb		sy
+ 
++#if defined(CEPHEUS)
++	CEPHEUS_CP_C	2284, 0xFFFFFF00
++#endif
++
+ #if !VMAPPLE && !defined(CEPHEUS)
+ 	MOV64   x1, SCTLR_EL1_DEFAULT
+ 	cmp		x0, x1
+@@ -844,6 +938,9 @@ common_start:
+ #endif
+ 
+ 	// Return to arm_init()
++#if defined(CEPHEUS)
++	CEPHEUS_CP_C	2276, 0xFF00FFFF
++#endif
+ 	ret
+ 
+ Ltrampoline:
