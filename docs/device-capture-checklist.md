@@ -43,12 +43,28 @@ fastboot boot Mu-cepheus-unixnu.img    # 临时引导，不写盘
 | A | UEFI 菜单 | 固件正常 | — |
 | B | DarwinBoot 日志 + **屏幕最底部**一条绿色横条 | 交接桩执行到 `br x1` 之前 | `Video[0]`（UEFI GOP） |
 | C | 屏幕**最左下角**一块 64×32 像素白色小方块 | 内核入口第一条指令执行了（`start.s`，无栈无页表） | `boot_args->Video`，无效才退回 `0x9c000000` |
+| C1–C4 | 白色方块**正上方**依次冒出的 4 条 64×8 色带：红 / 绿 / 蓝 / 品红 | 汇编检查点 A–D，把「白块 → 跳进 C」之间切成 5 段；最下面出现到哪一条，就是死在那一条**之后** | A、B 在 MMU 关时读 `boot_args->Video` 的物理地址；C、D 在 MMU 开之后写 V=P 常量 `0x9c000000` |
 | D | 顶部一行 `CEPHEUS EARLY 0: video pa=0x... w=1080 h=2340 row=4320` | `arm_init()` 已进入；左下角色块前 48 px 变绿，C 侧打点接管同一屏幕 | `boot_args->Video` |
 | E | 底部 20 个 48 px 宽色块（stage 0..19），伴随 `CEPHEUS EARLY 0..19: <label>` | 内核逐段推进；停在第几格就是卡在第几个检查点之后 | 前 8 格 `boot_args->Video`，8 之后为同一物理帧的 physmap 别名 |
 | F | 整屏**深蓝底** + `cepheus fbcon ready: pa=0x... WxH row N` | `serial_init()` 走到 framebuffer 控制台注册，之后的 kprintf 都可见 | `PE_state.video`，回退 ADT |
 | G | 蓝底上的内核日志/panic 文本 | 正常启动或明确 panic | 同上 |
 
 ### 关键点
+
+- **C1–C4 的判读**：四条色带从下往上的顺序就是执行顺序
+  白（stage 0）→ 红（A）→ 绿（B）→ 蓝（C）→ 品红（D）。
+  - 只有白色：死在 stage 0 之内（`boot_args->Video` 读到的地址不可写，或越界）。
+  - 红出现、绿不出现：死在 `create_bootstrap_mapping` 之后、
+    `b common_start` 之前，即建页表这一段。
+  - 绿出现、蓝不出现：死在 `common_start` 里，MMU 打开之前
+    （TCR/TTBR/MAIR/VBAR 任一处）。
+  - 蓝出现、品红不出现：MMU 已经打开，死在 `MSR_SCTLR_EL1_X0`
+    之后到 `ret` 之间（TPIDR/CPACR 或 physmap 访问）。
+  - 四条全出现、但没有 D 行的 `CEPHEUS EARLY 0`：汇编段全通，
+    问题在 `arm_init()` 入口或 C 侧打点本身（先怀疑字符绘制用它自己
+    解析的 depth，而不是 stage 0 硬编码的 32bpp）。
+  - 色带**宽度只有预期的一半**或颜色整体偏（红蓝互换）⇒ 通道顺序是
+    BGRA 而非 ARGB；颜色名以实际照片为准，位置顺序不变。
 
 - **B 的绿条现在在底部**。以前在顶部，正好盖掉 DarwinBoot 打印的
   `video pa` / `entry pa` 两行——静默内核唯一的诊断依据。

@@ -254,6 +254,10 @@ jobs:
         # the compiler error in it) was the signed job-log blob, which expires
         # within minutes and cannot be re-fetched. Publish the log on its own
         # tag so `curl` can always reach it without credentials.
+        #
+        # This is a convenience only: the step that really has to work is the
+        # ci-log branch push below, which does not depend on the release API.
+        continue-on-error: true
         if: always() && hashFiles('out/kernel.*.cepheus') == ''
         uses: softprops/action-gh-release@v2
         with:
@@ -268,6 +272,37 @@ jobs:
           files: |
             dxb/build.log
           fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Ship build.log to the ci-log branch
+        # The one channel that has to survive a failure: a plain git push of a
+        # gzipped build.log onto a throwaway branch. Releases, artifacts and
+        # job-log blobs all need the API, a token or a signature; this needs
+        # only contents:write, which the job already has.
+        #
+        #   curl -L -o build.log.gz \
+        #     https://raw.githubusercontent.com/<owner>/<repo>/ci-log/ci-log/<run_id>.log.gz
+        #
+        # The branch is replaced on every run, so it never grows.
+        continue-on-error: true
+        if: always() && hashFiles('dxb/build.log') != ''
+        run: |
+          set -e
+          mkdir -p ci-log
+          LOG="ci-log/${GITHUB_RUN_ID}.log.gz"
+          gzip -9 -c dxb/build.log > "$LOG"
+          ls -l "$LOG"
+          git config user.name  "ci-log"
+          git config user.email "ci-log@users.noreply.github.com"
+          # Build the commit out of a throwaway index so the working branch,
+          # its index and its worktree are all left exactly as they were.
+          export GIT_INDEX_FILE="$PWD/.git/ci-log.index"
+          git add -f "$LOG"
+          TREE=$(git write-tree)
+          COMMIT=$(git commit-tree "$TREE" -m "build.log for run ${GITHUB_RUN_ID} (${GITHUB_SHA})")
+          unset GIT_INDEX_FILE
+          git push -q -f origin "$COMMIT:refs/heads/ci-log"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
