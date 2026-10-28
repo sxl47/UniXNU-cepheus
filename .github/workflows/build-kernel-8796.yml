@@ -248,6 +248,29 @@ jobs:
           unzip -l xnu-8796-kernel.zip | tail -3
           ls -lh xnu-8796-kernel.zip
 
+      - name: Publish build log when the build produced no kernel
+        # A failed run used to leave nothing behind: the release step below is
+        # gated on the kernel existing, so the only copy of build.log (and of
+        # the compiler error in it) was the signed job-log blob, which expires
+        # within minutes and cannot be re-fetched. Publish the log on its own
+        # tag so `curl` can always reach it without credentials.
+        if: always() && hashFiles('out/kernel.*.cepheus') == ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: klog-${{ github.run_id }}
+          name: xnu-8796 build log ${{ github.sha }} (no kernel produced)
+          body: |
+            This run produced no `kernel.*.cepheus`. `build.log` is the full
+            output of `dxb/build.sh`, including patch application lines and
+            compiler diagnostics.
+
+                curl -L -o build.log https://github.com/${{ github.repository }}/releases/download/klog-${{ github.run_id }}/build.log
+          files: |
+            dxb/build.log
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish kernel to release (public direct download)
         # Only publish when the kernel actually exists: `always()` alone would
         # try to create a release for a failed build, and agh-release then
