@@ -238,7 +238,7 @@ index 19eb823..4c56dbf 100644
  	DECLARE("SR_RESTORE_TCR_EL1", offsetof(struct sysreg_restore, tcr_el1));
  
 diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
-index d0cdb50..7b87080 100644
+index d0cdb50..274d5ba 100644
 --- a/osfmk/arm64/start.s
 +++ b/osfmk/arm64/start.s
 @@ -464,11 +464,32 @@ LEXT(start_first_cpu)
@@ -310,7 +310,30 @@ index d0cdb50..7b87080 100644
  
  	// Clear the registers that will be used to store the userspace thread pointer and CPU number.
  	// We may not actually be booting from ordinal CPU 0, so this register will be updated
-@@ -648,6 +696,34 @@ Lkernelcache_base_found:
+@@ -633,10 +681,22 @@ Lkernelcache_base_found:
+ 	 * Splash framebuffer: one 32MB Normal-NC block in the EXISTING V=P
+ 	 * L2 table. Both framebuffer and RAM use L1 index 0; another call to
+ 	 * create_bootstrap_mapping would replace the RAM L2 table.
++	 *
++	 * Map boot_args->Video, not the SoC DT splash address: cepheus' loader
++	 * hands over video pa 0x90000000, which sits inside the V=P window where
++	 * the identity map is Normal write-back. Writes through that mapping stay
++	 * in cache and the display controller (which scans DRAM) keeps showing
++	 * pre-boot pixels until something evicts them -- on hardware this made
++	 * every checkpoint from here on, and every C-side mark, invisible. The DT
++	 * address remains only as a fallback for a Video record with no base.
++	 *
+ 	 * CEPHEUS uses 16K pages and all bring-up RAM is below 4GB, so the first
+ 	 * V=P L2 page is bootstrap_pagetables + 2*PGBYTES.
+ 	 */
++	ldr		x10, [x20, BA_VIDEO_BASE]
++	cbnz	x10, 1f
+ 	MOV64	x10, 0x9c000000
++1:
+ 	MOV64	x11, (ARM_TTE_TYPE_BLOCK | ARM_TTE_VALID | ARM_TTE_BLOCK_SH(SH_OUTER_MEMORY) | ARM_TTE_BLOCK_ATTRINDX(CACHE_ATTRINDX_WRITECOMB) | ARM_TTE_BLOCK_AF | ARM_TTE_BLOCK_PNX | ARM_TTE_BLOCK_NX)
+ 	orr		x11, x11, x10
+ 	and		x12, x10, #(ARM_TT_L2_INDEX_MASK)
+@@ -648,6 +708,34 @@ Lkernelcache_base_found:
  	/* Ensure TTEs are visible */
  	dsb		ish
  
@@ -345,14 +368,22 @@ index d0cdb50..7b87080 100644
  
  	b		common_start
  
-@@ -781,6 +857,25 @@ common_start:
+@@ -781,6 +869,34 @@ common_start:
  	MSR_SCTLR_EL1_X0
  	isb		sy
  
 +#if defined(CEPHEUS)
-+	/* checkpoint C, MMU on: blue band, rows 2284..2291 */
-+	MOV64	x5, (0x9c000000 + 2284 * 4320)
-+	mov		x4, #4320
++	/* checkpoint C, MMU on: blue band, rows H-56..H-49 */
++	ldr		x5, [x20, BA_VIDEO_BASE]
++	ldr		x4, [x20, BA_VIDEO_ROW_BYTES]
++	ldr		x6, [x20, BA_VIDEO_HEIGHT]
++	cbz		x5, LcpC_done
++	cbz		x4, LcpC_done
++	cmp		x6, #64
++	b.lo		LcpC_done
++	sub		x6, x6, #56
++	mul		x6, x6, x4
++	add		x5, x5, x6
 +	MOV64	x7, 0xFF0000FF
 +	mov		x2, #8
 +LcpC_row:
@@ -366,19 +397,28 @@ index d0cdb50..7b87080 100644
 +	subs		x2, x2, #1
 +	b.ne		LcpC_row
 +	dsb		sy
++LcpC_done:
 +#endif
 +
  #if !VMAPPLE && !defined(CEPHEUS)
  	MOV64   x1, SCTLR_EL1_DEFAULT
  	cmp		x0, x1
-@@ -844,6 +939,24 @@ common_start:
+@@ -844,6 +960,33 @@ common_start:
  #endif
  
  	// Return to arm_init()
 +#if defined(CEPHEUS)
-+	/* checkpoint D, MMU on: magenta band, rows 2276..2283 */
-+	MOV64	x5, (0x9c000000 + 2276 * 4320)
-+	mov		x4, #4320
++	/* checkpoint D, MMU on: magenta band, rows H-64..H-57 */
++	ldr		x5, [x20, BA_VIDEO_BASE]
++	ldr		x4, [x20, BA_VIDEO_ROW_BYTES]
++	ldr		x6, [x20, BA_VIDEO_HEIGHT]
++	cbz		x5, LcpD_done
++	cbz		x4, LcpD_done
++	cmp		x6, #64
++	b.lo		LcpD_done
++	sub		x6, x6, #64
++	mul		x6, x6, x4
++	add		x5, x5, x6
 +	MOV64	x7, 0xFFFF00FF
 +	mov		x2, #8
 +LcpD_row:
@@ -392,6 +432,7 @@ index d0cdb50..7b87080 100644
 +	subs		x2, x2, #1
 +	b.ne		LcpD_row
 +	dsb		sy
++LcpD_done:
 +#endif
  	ret
  

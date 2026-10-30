@@ -107,7 +107,7 @@ index 6f192f0..97e2df2 100644
  #if defined(KERNEL_INTEGRITY_KTRR) || defined(KERNEL_INTEGRITY_CTRR)
  	/*
 diff --git a/osfmk/arm64/cepheus_early.c b/osfmk/arm64/cepheus_early.c
-index 9f79343..eaf0d9b 100644
+index 9f79343..d56aee1 100644
 --- a/osfmk/arm64/cepheus_early.c
 +++ b/osfmk/arm64/cepheus_early.c
 @@ -2,7 +2,9 @@
@@ -138,26 +138,29 @@ index 9f79343..eaf0d9b 100644
  
  static uintptr_t early_fb = EARLY_DEFAULT_FB;
  static unsigned int early_width = EARLY_DEFAULT_WIDTH;
-@@ -42,6 +54,32 @@ extern unsigned char iso_font[256 * 16];
+@@ -42,6 +54,35 @@ extern unsigned char iso_font[256 * 16];
  static unsigned int early_row, early_col;
  static unsigned int early_started, early_disabled, early_panicking;
  
 +/*
 + * start.s maps the framebuffer Normal Non-Cacheable, so the first markers need
-+ * no maintenance. The physmap alias installed by arm_vm_init() is Normal
++ * no maintenance there. The physmap alias installed by arm_vm_init() is Normal
 + * cacheable; stores through it must be cleaned to the point of coherency or the
 + * display controller keeps scanning the old DRAM contents.
++ *
++ * Clean unconditionally rather than tracking which mapping is live: `dc cvac`
++ * on a Non-Cacheable line is architecturally a no-op, and the earlier attempt
++ * to infer "is this address cached?" from our own state was exactly what broke
++ * bring-up once the loader's framebuffer turned out to sit inside the V=P
++ * write-back window (boot_args Video = 0x90000000, not the DT's 0x9c000000).
++ * A few extra instructions per marker line is nothing against a screen that
++ * silently shows no kernel output at all.
 + */
 +#define EARLY_CACHE_LINE 64u
-+static unsigned int early_cached;
 +
 +static void
 +cepheus_early_sync(uintptr_t addr, unsigned long bytes)
 +{
-+	if (!early_cached) {
-+		__asm__ volatile("dsb sy" ::: "memory");
-+		return;
-+	}
 +	uintptr_t start = addr & ~(uintptr_t)(EARLY_CACHE_LINE - 1);
 +	uintptr_t end = (addr + bytes + EARLY_CACHE_LINE - 1) &
 +	    ~(uintptr_t)(EARLY_CACHE_LINE - 1);
@@ -171,7 +174,7 @@ index 9f79343..eaf0d9b 100644
  static void
  cepheus_early_clear_row(void)
  {
-@@ -50,6 +88,7 @@ cepheus_early_clear_row(void)
+@@ -50,6 +91,7 @@ cepheus_early_clear_row(void)
  		for (unsigned int x = 0; x < early_width; x++) {
  			line[x] = 0xff000000u;
  		}
@@ -179,7 +182,7 @@ index 9f79343..eaf0d9b 100644
  	}
  }
  
-@@ -87,6 +126,8 @@ cepheus_early_putc(char c)
+@@ -87,6 +129,8 @@ cepheus_early_putc(char c)
  					line[gx * EARLY_SCALE + sx] = pixel;
  				}
  			}
@@ -188,7 +191,7 @@ index 9f79343..eaf0d9b 100644
  		}
  	}
  	early_col++;
-@@ -100,26 +141,47 @@ cepheus_early_string(const char *s)
+@@ -100,26 +144,47 @@ cepheus_early_string(const char *s)
  	}
  }
  
@@ -246,7 +249,7 @@ index 9f79343..eaf0d9b 100644
  	cepheus_early_string(": ");
  	cepheus_early_string(label);
  	cepheus_early_putc('\n');
-@@ -142,9 +204,18 @@ cepheus_early_hex(uintptr_t v)
+@@ -142,9 +207,18 @@ cepheus_early_hex(uintptr_t v)
  }
  
  static void
@@ -267,7 +270,7 @@ index 9f79343..eaf0d9b 100644
  }
  
  /*
-@@ -162,9 +233,13 @@ cepheus_early_video(uintptr_t base, unsigned int row_bytes,
+@@ -162,9 +236,13 @@ cepheus_early_video(uintptr_t base, unsigned int row_bytes,
      unsigned int width, unsigned int height)
  {
  	/* One full cell plus the bottom band has to fit, or the console has zero
@@ -283,7 +286,7 @@ index 9f79343..eaf0d9b 100644
  
  	if (usable) {
  		early_fb = base;
-@@ -178,25 +253,28 @@ cepheus_early_video(uintptr_t base, unsigned int row_bytes,
+@@ -178,25 +256,28 @@ cepheus_early_video(uintptr_t base, unsigned int row_bytes,
  		early_started = 0;
  	}
  
@@ -328,7 +331,7 @@ index 9f79343..eaf0d9b 100644
  	}
  	cepheus_early_putc('\n');
  }
-@@ -217,10 +295,37 @@ cepheus_early_panic(const char *fmt, va_list *args)
+@@ -217,10 +298,36 @@ cepheus_early_panic(const char *fmt, va_list *args)
  	__asm__ volatile("dsb sy" ::: "memory");
  }
  
@@ -350,20 +353,19 @@ index 9f79343..eaf0d9b 100644
 + * bootstrap TTBR0 is still live: mark 8 uses the old window, mark 9 proves the
 + * new one works, and everything after mark 10 runs only with TTBR1.
 + */
- void
--cepheus_early_disable(void)
++void
 +cepheus_early_relocate(uintptr_t base)
- {
- 	cepheus_early_mark(8, "leaving bootstrap TTBR0");
++{
++	cepheus_early_mark(8, "leaving bootstrap TTBR0");
 +	early_fb = base;
-+	early_cached = 1;
 +	__asm__ volatile("dsb sy" ::: "memory");
 +	cepheus_early_mark(9, "physmap framebuffer VA live");
 +}
 +
-+void
-+cepheus_early_disable(void)
-+{
+ void
+ cepheus_early_disable(void)
+ {
+-	cepheus_early_mark(8, "leaving bootstrap TTBR0");
  	early_disabled = 1;
  	__asm__ volatile("dsb sy" ::: "memory");
  }
