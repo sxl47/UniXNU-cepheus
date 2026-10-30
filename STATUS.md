@@ -114,6 +114,22 @@
       - 判读补充：C 侧色块只会是绿→黄（`0xff00ff00 | (stage&7)*32<<16`），
         `start.s` 另外画纯白 + 红/绿/蓝/品红四条检查点色带；除此之外的纯红/纯蓝/粉色
         一定来自开机图/logo 残留
+- [x] 2026-10-30 晚真机实测：**四个汇编检查点全部出现**（红/绿/蓝/品红），死点越过
+      - 现象：白 stage-0 块之外，红（A）、绿（B）、蓝（C）、品红（D）四条 64×8
+        色带全部可见，位置与 `start.s` 中 `H-40 / H-48 / H-56 / H-64` 的计算一致
+      - 结论：`start_first_cpu` 从 stage 0 一路执行到 `ret`，**`ret` 已经跳进
+        `arm_init()`**。C/D 两条色带可见同时证明两件事：`0010z` 把 NC block 建在
+        `boot_args->Video`（`0x90000000`）上生效了，且 MMU 打开后按 Video 的
+        `rowBytes/height` 计算地址是对的。此前"有白块、无 D"的 write-back 陷阱
+        已经解决
+      - 因此死点被压缩到 `arm_init()` 函数体最前面这一段：从 `ret` 落地到
+        `cepheus_early_mark(1, ...)`（`DTEntry chosen = NULL;` 之后）之间，或者
+        `cepheus_early_video()` / `cepheus_early_mark()` 自身写屏失败
+      - 下一步判据：顶部有没有 `CEPHEUS EARLY 0: video pa=0x...` 那一行字。
+        有 ⇒ 汇编与 C 都健康，直接看 EARLY 停在几；没有 ⇒ 在 `arm_init` 入口加
+        一条不依赖 `cepheus_early.c` 任何状态的青色彩带（裸内联汇编），把"C 侧画字坏"
+        与"没进 arm_init"彻底分开
+
 - [ ] 真机实测 fbcon 物理地址 / 面板 / 触摸 IC（地址已由设备树确认，运行期以
       `boot_args->Video` 为准；仍缺真机确认）
 - [ ] UEFI 仓库 `uefi-cepheus`（已能出 UniXNU 镜像并推送诊断补丁，待真机验证）

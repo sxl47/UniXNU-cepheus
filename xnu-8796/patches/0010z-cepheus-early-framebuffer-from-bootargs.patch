@@ -2,10 +2,52 @@ diff --git a/osfmk/arm/arm_init.c b/osfmk/arm/arm_init.c
 index abfc169..ec3e53b 100644
 --- a/osfmk/arm/arm_init.c
 +++ b/osfmk/arm/arm_init.c
-@@ -347,6 +347,15 @@ arm_init(
+@@ -347,6 +347,57 @@ arm_init(
  	DTEntry chosen = NULL;
  	unsigned int dt_entry_size = 0;
  
++	/*
++	 * Two bands, because "no text on screen" has three different causes and
++	 * they need to stay distinguishable on a photo:
++	 *
++	 *   band 1 (cyan)  hardcoded 0x90000000 / 4320 / 2340, touches no state
++	 *                  at all. Seeing it means plain C stores through the NC
++	 *                  block reach the panel from inside arm_init().
++	 *   band 2 (pale)  same shape, but every number comes from args->Video.
++	 *                  Seeing it means boot_args is dereferenceable here.
++	 *
++	 * Cyan only  => args is bad (the store after it faults).
++	 * Cyan+pale  => entry path and args are both fine, so cepheus_early_video()
++	 *               or cepheus_early_mark() is what leaves the screen black.
++	 * Neither    => the ret out of start.s never landed in this function.
++	 *
++	 * The identity V=P map is live and the framebuffer block is Non-Cacheable
++	 * by this point (hardware: video pa 0x90000000, 1080x2340, row 4320), so
++	 * no cache maintenance is needed for these two bands.
++	 */
++	{
++		volatile uint32_t *band = (volatile uint32_t *)0x90000000ul +
++		    (2340u - 72u) * (4320u / sizeof(uint32_t));
++		for (unsigned int r = 0; r < 8; r++) {
++			for (unsigned int c = 0; c < 64; c++) {
++				band[c] = 0xff00ffffu;
++			}
++			band += 4320u / sizeof(uint32_t);
++		}
++		__asm__ volatile("dsb sy" ::: "memory");
++	}
++	{
++		volatile uint32_t *band = (volatile uint32_t *)
++		    (args->Video.v_baseAddr +
++		    (args->Video.v_height - 80) * args->Video.v_rowBytes);
++		for (unsigned int r = 0; r < 8; r++) {
++			for (unsigned int c = 0; c < 64; c++) {
++				band[c] = 0xffffff80u;
++			}
++			band += args->Video.v_rowBytes / sizeof(uint32_t);
++		}
++		__asm__ volatile("dsb sy" ::: "memory");
++	}
 +	/*
 +	 * Follow the firmware's framebuffer before drawing anything: the splash
 +	 * address baked into cepheus_early.c is a guess taken from the SoC DTs,
@@ -18,6 +60,7 @@ index abfc169..ec3e53b 100644
  	cepheus_early_mark(1, "arm_init entered (MMU on)");
  
  	arm_setup_pre_sign();
+
 diff --git a/osfmk/arm64/cepheus_early.c b/osfmk/arm64/cepheus_early.c
 index f355bac..9f79343 100644
 --- a/osfmk/arm64/cepheus_early.c

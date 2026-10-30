@@ -44,6 +44,7 @@ fastboot boot Mu-cepheus-unixnu.img    # 临时引导，不写盘
 | B | DarwinBoot 日志 + **屏幕最底部**一条绿色横条 | 交接桩执行到 `br x1` 之前 | `Video[0]`（UEFI GOP） |
 | C | 屏幕**最左下角**一块 64×32 像素白色小方块 | 内核入口第一条指令执行了（`start.s`，无栈无页表） | `boot_args->Video`，无效才退回 `0x9c000000` |
 | C1–C4 | 白色方块**正上方**依次冒出的 4 条 64×8 色带：红 / 绿 / 蓝 / 品红 | 汇编检查点 A–D，把「白块 → 跳进 C」之间切成 5 段；最下面出现到哪一条，就是死在那一条**之后** | 四条都读 `boot_args->Video`（`rowBytes` / `height` 也取自 Video） |
+| C5 | 再往上两条 64×8：**青色**、**淡黄色** | `arm_init()` 入口的裸写测试（不经过 `cepheus_early.c`）。青＝硬编码 `0x90000000/4320/2340` 能写；淡黄＝`args->Video` 能解引用 | 青为常量，淡黄取自 `args->Video` |
 | D | 顶部一行 `CEPHEUS EARLY 0: video pa=0x... w=1080 h=2340 row=4320` | `arm_init()` 已进入；左下角色块前 48 px 变绿，C 侧打点接管同一屏幕 | `boot_args->Video` |
 | E | 底部 20 个 48 px 宽色块（stage 0..19），伴随 `CEPHEUS EARLY 0..19: <label>` | 内核逐段推进；停在第几格就是卡在第几个检查点之后 | 前 8 格 `boot_args->Video`，8 之后为同一物理帧的 physmap 别名 |
 | F | 整屏**深蓝底** + `cepheus fbcon ready: pa=0x... WxH row N` | `serial_init()` 走到 framebuffer 控制台注册，之后的 kprintf 都可见 | `PE_state.video`，回退 ADT |
@@ -70,6 +71,13 @@ fastboot boot Mu-cepheus-unixnu.img    # 临时引导，不写盘
     framebuffer 在 `0x90000000`（真机实测值），C/D 会写进另一块 RAM 的
     write-back 缓存，屏幕上什么都不出现。这是 2026-10-30 之前蓝/品红时有时无
     （要等 cache 被自然换出才看得到）的原因。
+
+  - **C5 判读**（三条色带都在最左边缘、紧贴 C4 上方）：
+    - 青 + 淡黄都有 ⇒ 进了 `arm_init()`，`args` 也可用 ⇒ 黑屏的原因在
+      `cepheus_early_video()` / `cepheus_early_mark()` 内部，不在入口。
+    - 只有青 ⇒ 进了 `arm_init()`，但 `args->Video` 解引用就挂 ⇒ 交接的 boot_args
+      指针不可用，回头查 `x0`。
+    - 两条都没有 ⇒ `start.s` 的 `ret` 没落到 `arm_init()` ⇒ 查 `lr` 的值与 KVA 映射。
 
 - **B 的绿条现在在底部**。以前在顶部，正好盖掉 DarwinBoot 打印的
   `video pa` / `entry pa` 两行——静默内核唯一的诊断依据。
