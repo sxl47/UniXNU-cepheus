@@ -481,7 +481,7 @@ index d0cdb50..274d5ba 100644
  #if !VMAPPLE && !defined(CEPHEUS)
  	MOV64   x1, SCTLR_EL1_DEFAULT
  	cmp		x0, x1
-@@ -844,6 +960,122 @@ common_start:
+@@ -844,6 +960,219 @@ common_start:
  #endif
  
  	// Return to arm_init()
@@ -514,41 +514,41 @@ index d0cdb50..274d5ba 100644
 +#endif
 +#if defined(CEPHEUS)
 +	/*
-+	 * Hand control to a probe stub instead of ret'ing straight into
-+	 * arm_init(). The stub is the first code that runs with the MMU on and
-+	 * touches no stack, so it can tell three things apart that one photo
-+	 * otherwise cannot:
-+	 *
-+	 *   band 1 only   => ret arrives, but arm_init()'s prologue faults on
-+	 *                    its first stack push: SP handed over here is bad
-+	 *   bands 1+2     => ret, kernel text and stack are all fine, so the
-+	 *                    fault is inside arm_init() proper
-+	 *   neither       => the ret itself does not arrive
-+	 *
-+	 * x22 - x23 is the VA->V=P delta this file has been using since the
-+	 * bootstrap tables were built; the probe sits in the same text.
++	 * Enter the probe with a PC-relative branch.  The stub is in this
++	 * same text, so it is reachable in every translation regime --
++	 * MMU on or off, V=P or KVA -- with no address arithmetic at all.
++	 * lr keeps pointing at arm_init for the probe to ret into.
 +	 */
-+	adrp	x9, cepheus_entry_probe@page
-+	add		x9, x9, cepheus_entry_probe@pageoff
-+	add		x9, x9, x22
-+	sub		x9, x9, x23
-+	mov		lr, x9
++	b		cepheus_entry_probe
 +#endif
  	ret
  
 +
 +#if defined(CEPHEUS)
 +/*
-+ * Runs where arm_init() would have been entered.
-+ *	x0  boot_args KVA -- must reach arm_init() untouched
-+ *	x19 arm_init()'s address, taken from lr on entry
-+ *	x20 boot_args PA -- RAM is identity mapped, so the Video record is
-+ *	    still readable from here
-+ * No stack is touched until the explicit push in the middle.
++ * Diagnostics stub, entered by the PC-relative branch above.  It
++ * runs in whatever translation regime the CPU is in and paints
++ * marks into the black backdrop column (x = 0, 8 rows each), then
++ * rets to lr -- arm_init, exactly as the stock code would:
++ *
++ *   white   H-96   the branch arrived
++ *   yellow  H-120  MMU is ON at the current exception level
++ *   red     H-120  MMU is OFF at the current exception level
++ *   magenta H-144  the current exception level is EL2
++ *   cyan    H-168  one push/pop on the handed-over SP worked
++ *
++ * The C/D checkpoints cannot tell MMU state apart: they write
++ * through the V=P identity map, which succeeds with the MMU on or
++ * off.  A kernel entered at EL2 that only sets SCTLR_EL1.M looks
++ * exactly like that until the first KVA fetch -- what the
++ * yellow/red pair below decides.
++ *
++ * x1-x7 and x9 are dead on this path; x0 (boot_args KVA), lr
++ * (arm_init) and x20 (boot_args PA) are preserved.  The only
++ * stack access is the explicit push before the cyan mark.
 + */
 +cepheus_entry_probe:
-+	mov		x19, lr
-+	/* band 1, white, rows H-96..H-89, 80 px: the ret arrived */
++	/* band 1, white, rows H-96..H-89: the branch arrived */
 +	ldr		x5, [x20, BA_VIDEO_BASE]
 +	ldr		x4, [x20, BA_VIDEO_ROW_BYTES]
 +	ldr		x6, [x20, BA_VIDEO_HEIGHT]
@@ -573,10 +573,20 @@ index d0cdb50..274d5ba 100644
 +	b.ne	Lprobe1_row
 +	dsb		sy
 +Lprobe1_done:
-+	/* the one stack access: a fault here leaves band 1 as the last mark */
-+	str		xzr, [sp, #-16]!
-+	add		sp, sp, #16
-+	/* band 2, yellow, rows H-120..H-113, 104 px: the stack works */
++	/* MMU enabled at the current exception level? */
++	mrs		x9, CurrentEL
++	lsr		x9, x9, #2
++	and		x9, x9, #3
++	cmp		x9, #2
++	b.ne	Lprobe_el1
++	mrs		x9, sctlr_el2
++	b		Lprobe_mmu_test
++Lprobe_el1:
++	mrs		x9, sctlr_el1
++Lprobe_mmu_test:
++	tst		x9, #1
++	b.eq	Lprobe_mmu_off
++	/* yellow, rows H-120..H-113: MMU is ON */
 +	ldr		x5, [x20, BA_VIDEO_BASE]
 +	ldr		x4, [x20, BA_VIDEO_ROW_BYTES]
 +	ldr		x6, [x20, BA_VIDEO_HEIGHT]
@@ -601,6 +611,93 @@ index d0cdb50..274d5ba 100644
 +	b.ne	Lprobe2_row
 +	dsb		sy
 +Lprobe2_done:
-+	br		x19
++	b		Lprobe_el2_check
++Lprobe_mmu_off:
++	/* red, rows H-120..H-113: MMU is OFF */
++	ldr		x5, [x20, BA_VIDEO_BASE]
++	ldr		x4, [x20, BA_VIDEO_ROW_BYTES]
++	ldr		x6, [x20, BA_VIDEO_HEIGHT]
++	cbz		x5, Lprobe2r_done
++	cbz		x4, Lprobe2r_done
++	cmp		x6, #120
++	b.lo	Lprobe2r_done
++	sub		x6, x6, #120
++	mul		x6, x6, x4
++	add		x5, x5, x6
++	MOV64	x7, 0xFFFF0000
++	mov		x2, #8
++Lprobe2r_row:
++	mov		x3, x5
++	mov		x1, #104
++Lprobe2r_px:
++	str		w7, [x3], #4
++	subs	x1, x1, #1
++	b.ne	Lprobe2r_px
++	add		x5, x5, x4
++	subs	x2, x2, #1
++	b.ne	Lprobe2r_row
++	dsb		sy
++Lprobe2r_done:
++Lprobe_el2_check:
++	mrs		x9, CurrentEL
++	lsr		x9, x9, #2
++	and		x9, x9, #3
++	cmp		x9, #2
++	b.ne	Lprobe_el_done
++	/* magenta, rows H-144..H-137: we are at EL2 */
++	ldr		x5, [x20, BA_VIDEO_BASE]
++	ldr		x4, [x20, BA_VIDEO_ROW_BYTES]
++	ldr		x6, [x20, BA_VIDEO_HEIGHT]
++	cbz		x5, Lprobe3_done
++	cbz		x4, Lprobe3_done
++	cmp		x6, #144
++	b.lo	Lprobe3_done
++	sub		x6, x6, #144
++	mul		x6, x6, x4
++	add		x5, x5, x6
++	MOV64	x7, 0xFFFF00FF
++	mov		x2, #8
++Lprobe3_row:
++	mov		x3, x5
++	mov		x1, #104
++Lprobe3_px:
++	str		w7, [x3], #4
++	subs	x1, x1, #1
++	b.ne	Lprobe3_px
++	add		x5, x5, x4
++	subs	x2, x2, #1
++	b.ne	Lprobe3_row
++	dsb		sy
++Lprobe3_done:
++Lprobe_el_done:
++	/* the one stack access: a fault leaves the marks above */
++	str		xzr, [sp, #-16]!
++	add		sp, sp, #16
++	/* cyan, rows H-168..H-161: the handed-over SP works */
++	ldr		x5, [x20, BA_VIDEO_BASE]
++	ldr		x4, [x20, BA_VIDEO_ROW_BYTES]
++	ldr		x6, [x20, BA_VIDEO_HEIGHT]
++	cbz		x5, Lprobe4_done
++	cbz		x4, Lprobe4_done
++	cmp		x6, #168
++	b.lo	Lprobe4_done
++	sub		x6, x6, #168
++	mul		x6, x6, x4
++	add		x5, x5, x6
++	MOV64	x7, 0xFF00FFFF
++	mov		x2, #8
++Lprobe4_row:
++	mov		x3, x5
++	mov		x1, #128
++Lprobe4_px:
++	str		w7, [x3], #4
++	subs	x1, x1, #1
++	b.ne	Lprobe4_px
++	add		x5, x5, x4
++	subs	x2, x2, #1
++	b.ne	Lprobe4_row
++	dsb		sy
++Lprobe4_done:
++	ret
 +#endif
  Ltrampoline:
