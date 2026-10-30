@@ -37,7 +37,7 @@ index abfc169..ec3e53b 100644
 +		    (2340u - 160u) * (4320u / sizeof(uint32_t));
 +		for (unsigned int r = 0; r < 24; r++) {
 +			for (unsigned int c = 0; c < 160; c++) {
-+				row[c] = 0xffffffffu;
++				row[240 + c] = 0xffffffffu;
 +			}
 +			row += 4320u / sizeof(uint32_t);
 +		}
@@ -49,7 +49,7 @@ index abfc169..ec3e53b 100644
 +		    (args->Video.v_height - 192) * args->Video.v_rowBytes);
 +		for (unsigned int r = 0; r < 24; r++) {
 +			for (unsigned int c = 0; c < 200; c++) {
-+				row[c] = 0xffffff00u;
++				row[240 + c] = 0xffffff00u;
 +			}
 +			row += args->Video.v_rowBytes / sizeof(uint32_t);
 +		}
@@ -338,7 +338,7 @@ index d0cdb50..274d5ba 100644
 +	sub		x9, x0, x11
 +	mov		x2, #200
 +Lcepheus_backdrop_row:
-+	mov		x3, #280
++	mov		x3, #480
 +	mov		x5, x9
 +Lcepheus_backdrop_px:
 +	str		wzr, [x5], #4
@@ -481,7 +481,7 @@ index d0cdb50..274d5ba 100644
  #if !VMAPPLE && !defined(CEPHEUS)
  	MOV64   x1, SCTLR_EL1_DEFAULT
  	cmp		x0, x1
-@@ -844,6 +960,33 @@ common_start:
+@@ -844,6 +960,122 @@ common_start:
  #endif
  
  	// Return to arm_init()
@@ -512,6 +512,95 @@ index d0cdb50..274d5ba 100644
 +	dsb		sy
 +LcpD_done:
 +#endif
++#if defined(CEPHEUS)
++	/*
++	 * Hand control to a probe stub instead of ret'ing straight into
++	 * arm_init(). The stub is the first code that runs with the MMU on and
++	 * touches no stack, so it can tell three things apart that one photo
++	 * otherwise cannot:
++	 *
++	 *   band 1 only   => ret arrives, but arm_init()'s prologue faults on
++	 *                    its first stack push: SP handed over here is bad
++	 *   bands 1+2     => ret, kernel text and stack are all fine, so the
++	 *                    fault is inside arm_init() proper
++	 *   neither       => the ret itself does not arrive
++	 *
++	 * x22 - x23 is the VA->V=P delta this file has been using since the
++	 * bootstrap tables were built; the probe sits in the same text.
++	 */
++	adrp	x9, cepheus_entry_probe@page
++	add		x9, x9, cepheus_entry_probe@pageoff
++	add		x9, x9, x22
++	sub		x9, x9, x23
++	mov		lr, x9
++#endif
  	ret
  
++
++#if defined(CEPHEUS)
++/*
++ * Runs where arm_init() would have been entered.
++ *	x0  boot_args KVA -- must reach arm_init() untouched
++ *	x19 arm_init()'s address, taken from lr on entry
++ *	x20 boot_args PA -- RAM is identity mapped, so the Video record is
++ *	    still readable from here
++ * No stack is touched until the explicit push in the middle.
++ */
++cepheus_entry_probe:
++	mov		x19, lr
++	/* band 1, white, rows H-96..H-89, 80 px: the ret arrived */
++	ldr		x5, [x20, BA_VIDEO_BASE]
++	ldr		x4, [x20, BA_VIDEO_ROW_BYTES]
++	ldr		x6, [x20, BA_VIDEO_HEIGHT]
++	cbz		x5, Lprobe1_done
++	cbz		x4, Lprobe1_done
++	cmp		x6, #96
++	b.lo	Lprobe1_done
++	sub		x6, x6, #96
++	mul		x6, x6, x4
++	add		x5, x5, x6
++	MOV64	x7, 0xFFFFFFFF
++	mov		x2, #8
++Lprobe1_row:
++	mov		x3, x5
++	mov		x1, #80
++Lprobe1_px:
++	str		w7, [x3], #4
++	subs	x1, x1, #1
++	b.ne	Lprobe1_px
++	add		x5, x5, x4
++	subs	x2, x2, #1
++	b.ne	Lprobe1_row
++	dsb		sy
++Lprobe1_done:
++	/* the one stack access: a fault here leaves band 1 as the last mark */
++	str		xzr, [sp, #-16]!
++	add		sp, sp, #16
++	/* band 2, yellow, rows H-120..H-113, 104 px: the stack works */
++	ldr		x5, [x20, BA_VIDEO_BASE]
++	ldr		x4, [x20, BA_VIDEO_ROW_BYTES]
++	ldr		x6, [x20, BA_VIDEO_HEIGHT]
++	cbz		x5, Lprobe2_done
++	cbz		x4, Lprobe2_done
++	cmp		x6, #120
++	b.lo	Lprobe2_done
++	sub		x6, x6, #120
++	mul		x6, x6, x4
++	add		x5, x5, x6
++	MOV64	x7, 0xFFFFFF00
++	mov		x2, #8
++Lprobe2_row:
++	mov		x3, x5
++	mov		x1, #104
++Lprobe2_px:
++	str		w7, [x3], #4
++	subs	x1, x1, #1
++	b.ne	Lprobe2_px
++	add		x5, x5, x4
++	subs	x2, x2, #1
++	b.ne	Lprobe2_row
++	dsb		sy
++Lprobe2_done:
++	br		x19
++#endif
  Ltrampoline:
