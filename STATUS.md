@@ -77,6 +77,43 @@
         `_cepheus_early_fb_bytes`，`strings` 有 `leaving bootstrap TTBR0`、
         `physmap framebuffer VA live`、`fb outside physmap; console off`；
         `arm_vm_init` 反汇编里能看到对上述函数的 `bl`。
+- [x] 2026-10-30 真机实测：framebuffer 实测地址 `0x90000000`，定位“内核无输出”
+      - 刷机包报的是 `k8796-40453235702`（commit `12cdc04`）；但底部同时出现
+        **白/红/绿/蓝/品红**五种颜色，与检查点 A–D 的配色（白 stage0、红 A、绿 B、
+        蓝 C、品红 D）完全对应，实际刷的可能是 `k8796-40703834057`
+        （commit `7310028`，含检查点的最新 release）。两种情况下结论一致，
+        只是 C/D 要靠 cache 被自然换出才偶尔可见
+      - DarwinBoot 转写到的关键值：`video pa 0x90000000 1080x2340 row 4320
+        bytes 32 bpp`、`entry pa 0xC4C30488`、
+        `entry words 14000719 D503201F D503201F D503201F`、
+        `CurrentEL 1 SCTLR_EL1 0xC01800? TCR_EL1 0x280803518`、
+        `ID_AA64MMFR0_EL1 0x101122`、`ID_AA64PFR0_EL1 0x11112222`、
+        `SecurityLock::LockType: SOFTWARE_LOCK...`、`App Log Flush : 0 ms`
+      - 屏幕现象：底部绿条 + 我们的 64×32 白色 stage-0 方块（切表前 MMU-off 直写，
+        所以可见），**没有任何 `CEPHEUS EARLY` 文字**；其余部分黑底
+      - 根因：交接的 Video 是 `0x90000000`，不是设备树的 `0x9c000000`。该地址落在
+        6 GB RAM 的 V=P identity 映射内，属性是 `ARM_TTE_BOOT_BLOCK`
+        =`CACHE_ATTRINDX_WRITEBACK`；`0010` 只把硬编码的 `0x9c000000` 改成 NC block，
+        于是 C 侧所有打点（以及 MMU 打开后的检查点 C/D，它们当时也硬编码
+        `0x9c000000`）都写进 cache，显示控制器扫 DRAM 看不到，只有切表前的白块和
+        A/B 两条色带能看见 ⇒ 内核入口执行过，问题在映射属性，不在启动流程
+      - 修复 `0010z`：`start.s` 的 NC block 物理基址改为 `ldr x10, [x20,
+        BA_VIDEO_BASE]`（为 0 才退回 `MOV64 0x9c000000`）；检查点 C/D 也从
+        `MOV64 0x9c000000 + N*4320` 改为按 Video 的 base/rowBytes/height 计算，
+        Video 无效时整段跳过（避免写到未映射地址）。注释里写明 write-back 陷阱
+      - 修复 `0012`：`cepheus_early_sync()` 改为**无条件**按 64 字节 cache line
+        `dc cvac`（删除 `early_cached` 标志及其在 `cepheus_early_relocate()` 里的
+        赋值）。NC 映射下该指令是无害 no-op，WB 映射下是唯一能让像素落到 DRAM 的
+        兜底；靠“自认为知道当前映射是不是 cacheable”来判断，正是这次全黑的来源
+      - 验证：干净上游树（`xnu-8796.141.3`）按真实 apply 顺序
+        `0003 → 0004 → 0008(start.s) → 0010 → 0010z → 0011 → 0012 → 0017(protos.h)`
+        依次 `git apply` 全通过，结果与编辑树逐文件 `diff` 一致；两个补丁均无 CRLF。
+        （只 apply 0003/0010/0010z 会失败：`0010z` 的检查点 C hunk 上下文里含有
+        0004 改过的 `#if !VMAPPLE && !defined(CEPHEUS)`，所以验证树必须带上
+        0004/0008）
+      - 判读补充：C 侧色块只会是绿→黄（`0xff00ff00 | (stage&7)*32<<16`），
+        `start.s` 另外画纯白 + 红/绿/蓝/品红四条检查点色带；除此之外的纯红/纯蓝/粉色
+        一定来自开机图/logo 残留
 - [ ] 真机实测 fbcon 物理地址 / 面板 / 触摸 IC（地址已由设备树确认，运行期以
       `boot_args->Video` 为准；仍缺真机确认）
 - [ ] UEFI 仓库 `uefi-cepheus`（已能出 UniXNU 镜像并推送诊断补丁，待真机验证）

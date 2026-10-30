@@ -44,9 +44,10 @@ run `40453235702`（commit `12cdc04`）。
 
 1. ~~DRAM 容量与 base~~（已实测 2026-10-24：6GB 变体，`dram_size = 0x180000000`）
 2. ~~userdata 分区 first_lba / last_lba~~（已实测：`0x7C000`–`0x1C47FFA`，4K LBA）
-3. ~~面板 framebuffer 地址~~（设备树已确认：`cont_splash_region@9c000000`，
-   `reg = <0x9c000000 0x2400000>`，1080×2340，stride 4320；运行期内核优先用
-   `boot_args->Video`，ADT 值只作回退）
+3. ~~面板 framebuffer 地址~~（设备树 `cont_splash_region@9c000000`，
+   `reg = <0x9c000000 0x2400000>`，1080×2340，stride 4320；**2026-10-30 真机实测
+   UEFI 交接的是 `video pa 0x90000000`**，落在 6 GB RAM 的 V=P 映射内。运行期内核
+   一律优先用 `boot_args->Video`，ADT 的 `0x9c000000` 只在没有 Video 时回退）
 4. OS 卷 vol_uuid（换 IPSW 后从 dmg 读）
 5. 面板/触摸驱动适配（小米 9：Samsung s6e3fc2x01 面板、触控 IC 待查）
 
@@ -59,7 +60,8 @@ run `40453235702`（commit `12cdc04`）。
 | A | UEFI 菜单 | 固件正常 |
 | B | DarwinBoot 日志 + **底部**绿条 | 交接桩执行；`video pa` / `entry pa` 不再被绿条遮住 |
 | C | 左下角 64×32 白/绿小方块 | `start.s` 第一条指令执行（无栈无页表；直接读 `boot_args->Video`，无效才退回 `0x9c000000`） |
-| D | `CEPHEUS EARLY 0: video pa=0x... w=1080 h=2340 row=4320`（一行） | `arm_init()` 已进入，C 侧打点接管同一块屏幕 |
+| C1–C4 | 白块正上方依次出现红/绿/蓝/品红 4 条 64×8 色带 | 汇编检查点 A–D；出现到第几条＝执行到第几条之后，全部出现但无 D 行＝问题在 C 侧 |
+| D | `CEPHEUS EARLY 0: video pa=0x90000000 w=1080 h=2340 row=4320`（一行，pa 以实测为准） | `arm_init()` 已进入，C 侧打点接管同一块屏幕 |
 | E | 底部 20 格 48 px 色块 + `CEPHEUS EARLY 0..19` | 内核逐段推进，停在第几格就是卡在哪个检查点；8/9 之间是 TTBR0 → physmap 的切换 |
 | F | 深蓝底 + `cepheus fbcon ready: pa=0x...` | `serial_init()` 注册 framebuffer 控制台成功 |
 | G | 蓝底内核日志/panic | 后续输出可见 |
@@ -90,6 +92,12 @@ DarwinBoot 只挂 FAT 卷，所以内核和 ADT 必须放在这个镜像里。
 - ADT 不带 RAMDisk 占位符，除非真的提供 initrd
 - `build-libpthread-kernel.py` 必须在 archives 里，否则 pthread panic
 - "日志停止"≠"内核停止"：用 `boot-progress=2` 看检查点
+- **早期控制台必须跟着 `boot_args->Video` 走，并且不能假设映射是 NC**：
+  cepheus 交接的是 `video pa 0x90000000`，它落在 RAM 的 V=P identity 映射里，属性是
+  Normal write-back。只对硬编码的 `0x9c000000` 建 NC block 时，C 侧打点全留在 cache，
+  屏幕上一个字都看不到（2026-10-30 真机就是这样）。现在 `start.s` 用 Video 的地址建
+  NC block，`cepheus_early_sync()` 再无条件按 cache line `dc cvac`——NC 下是 no-op，
+  WB 下是唯一能让显示控制器看到像素的动作
 
 ## 历史文档
 

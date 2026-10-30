@@ -43,7 +43,7 @@ fastboot boot Mu-cepheus-unixnu.img    # 临时引导，不写盘
 | A | UEFI 菜单 | 固件正常 | — |
 | B | DarwinBoot 日志 + **屏幕最底部**一条绿色横条 | 交接桩执行到 `br x1` 之前 | `Video[0]`（UEFI GOP） |
 | C | 屏幕**最左下角**一块 64×32 像素白色小方块 | 内核入口第一条指令执行了（`start.s`，无栈无页表） | `boot_args->Video`，无效才退回 `0x9c000000` |
-| C1–C4 | 白色方块**正上方**依次冒出的 4 条 64×8 色带：红 / 绿 / 蓝 / 品红 | 汇编检查点 A–D，把「白块 → 跳进 C」之间切成 5 段；最下面出现到哪一条，就是死在那一条**之后** | A、B 在 MMU 关时读 `boot_args->Video` 的物理地址；C、D 在 MMU 开之后写 V=P 常量 `0x9c000000` |
+| C1–C4 | 白色方块**正上方**依次冒出的 4 条 64×8 色带：红 / 绿 / 蓝 / 品红 | 汇编检查点 A–D，把「白块 → 跳进 C」之间切成 5 段；最下面出现到哪一条，就是死在那一条**之后** | 四条都读 `boot_args->Video`（`rowBytes` / `height` 也取自 Video） |
 | D | 顶部一行 `CEPHEUS EARLY 0: video pa=0x... w=1080 h=2340 row=4320` | `arm_init()` 已进入；左下角色块前 48 px 变绿，C 侧打点接管同一屏幕 | `boot_args->Video` |
 | E | 底部 20 个 48 px 宽色块（stage 0..19），伴随 `CEPHEUS EARLY 0..19: <label>` | 内核逐段推进；停在第几格就是卡在第几个检查点之后 | 前 8 格 `boot_args->Video`，8 之后为同一物理帧的 physmap 别名 |
 | F | 整屏**深蓝底** + `cepheus fbcon ready: pa=0x... WxH row N` | `serial_init()` 走到 framebuffer 控制台注册，之后的 kprintf 都可见 | `PE_state.video`，回退 ADT |
@@ -65,6 +65,11 @@ fastboot boot Mu-cepheus-unixnu.img    # 临时引导，不写盘
     解析的 depth，而不是 stage 0 硬编码的 32bpp）。
   - 色带**宽度只有预期的一半**或颜色整体偏（红蓝互换）⇒ 通道顺序是
     BGRA 而非 ARGB；颜色名以实际照片为准，位置顺序不变。
+  - **C/D 必须也读 `boot_args->Video`**：它们在 MMU 打开之后写，走的是 V=P
+    identity 映射；如果只给设备树的 `0x9c000000` 建 NC block，而交接的
+    framebuffer 在 `0x90000000`（真机实测值），C/D 会写进另一块 RAM 的
+    write-back 缓存，屏幕上什么都不出现。这是 2026-10-30 之前蓝/品红时有时无
+    （要等 cache 被自然换出才看得到）的原因。
 
 - **B 的绿条现在在底部**。以前在顶部，正好盖掉 DarwinBoot 打印的
   `video pa` / `entry pa` 两行——静默内核唯一的诊断依据。
@@ -88,6 +93,19 @@ fastboot boot Mu-cepheus-unixnu.img    # 临时引导，不写盘
   **19** 在 `serial_init()` 返回之后；19 一出现、fbcon 已注册，就把整个屏幕交给
   fbcon（同一物理帧上的两套文字栅格继续互画只会互相覆盖）。
 - **F 的蓝底**是“内核 fbcon 真的接管了屏幕”的照相级信号；黑底继续滚字说明还在用早期打点。
+- **色块颜色只有绿→黄**：C 侧第 n 格是 `0xff00ff00 | ((n & 7) * 32 << 16)`，即绿到黄；
+  `start.s` 的白块是纯白，检查点固定为红/绿/蓝/品红。除此之外的纯红/纯蓝/粉色
+  一定来自开机图 / UEFI logo 残留，不要当成进度信号。
+
+### 实测备忘：2026-10-30 的“内核全黑”
+
+那一版屏幕上有 B 的绿条、有 C 的白块，但 D/E 一个字都没有。原因是 UEFI 交接的
+`video pa` 是 `0x90000000`（不是设备树的 `0x9c000000`），而它落在 RAM 的 V=P identity
+映射里，属性是 Normal **write-back**；早期控制台只给 `0x9c000000` 建了 NC block，于是
+所有 C 侧打点（以及 MMU 打开后的检查点 C/D）都停在 cache 里，显示控制器扫 DRAM 什么也
+看不到。修复是 `0010z`（NC block 和检查点 C/D 都跟着 `boot_args->Video`）+ `0012`
+（打点后无条件 `dc cvac`）。**看到白块却没有 D 行，且 `video pa` 不是 `0x9c000000`，
+就是这一类问题。**
 
 ## 4. 文字转写模板
 
@@ -126,6 +144,7 @@ fastboot boot Mu-cepheus-unixnu.img    # 临时引导，不写盘
 | A 都进不去 | 问题在 UEFI 镜像/按键 | 换镜像，查 UEFI CI 日志 |
 | 有 B，底部无 C、无 D | 内核入口未执行 | 对比 `entry pa` 与内核实际 load address；查交接参数 |
 | 有 C，无 D，无其它 | 执行了内核第一条指令，但 `arm_init()` 未到 | 查异常向量/栈/重定位 |
+| 有白块和红/绿，但没有蓝/品红，也没有 D | MMU 打开后的写入落在 write-back 缓存里 | 确认 release 含 `0010z`+`0012`；对比 B 的 `video pa` 与 `0x9c000000` |
 | 有 D 且带 `BAD` | `boot_args->Video` 不可用，已退回 `0x9c000000` | 把 `raw pa` / `w` / `h` / `row` 记录下来 |
 | 有 D，`pa` 与 B 的 `video pa` 不同 | 交接的 Video 与 UEFI 打印的不一致 | 记录两个 pa，作为下一版默认值 |
 | 有 D，停在 EARLY n | 卡在第 n 个检查点之后 | 记 n，查该检查点对应函数 |

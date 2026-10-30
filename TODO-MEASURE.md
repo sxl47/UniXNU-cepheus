@@ -32,12 +32,13 @@ cat /sys/block/sda/sdaXX/size
 cat /proc/device-tree/soc/qcom,mdss-sspp@0/... # 或直接
 dmesg | grep -i "mdss\|framebuffer\|s6e3fc"
 ```
-小米 9 面板：Samsung s6e3fc2x01，1080×2340。**已从设备树确认**
-`cont_splash_region@9c000000` 的 `reg = <0x9c000000 0x2400000>`，即
-framebuffer 物理地址 `0x9C000000`、stride 4320；内核运行期优先用
-`boot_args->Video`（UEFI GOP 实际地址），ADT 值只作回退。真机只需确认
-屏幕上 `CEPHEUS EARLY 0: video pa=0x...` 打印的地址与 DarwinBoot
-的 `video pa` 是否一致；若出现 `BAD` 则记下 `raw pa` / `w` / `h` / `row`。
+小米 9 面板：Samsung s6e3fc2x01，1080×2340。设备树里
+`cont_splash_region@9c000000` 的 `reg = <0x9c000000 0x2400000>`，stride 4320；但
+**2026-10-30 真机实测 UEFI 交接的 `video pa` 是 `0x90000000`**（落在 6 GB RAM 的
+V=P 映射内，属性是 Normal write-back）。内核运行期一律优先用 `boot_args->Video`，
+ADT 的 `0x9c000000` 只作回退；`0010z` 给 Video 地址建 NC block，`0012` 无条件
+`dc cvac`。真机只需确认屏幕上 `CEPHEUS EARLY 0: video pa=0x...` 打印的地址与
+DarwinBoot 的 `video pa` 一致；若出现 `BAD` 则记下 `raw pa` / `w` / `h` / `row`。
 设备树提取方法照抄 nabu `docs/nabu-dts-extract.md`（针对 boot.img 里的 dtb）。
 
 ## 4. OS 卷 UUID（→ board.toml root_match_volume_uuid）
@@ -52,8 +53,8 @@ framebuffer 物理地址 `0x9C000000`、stride 4320；内核运行期优先用
 
 - 已基于 Lux12138/UniXNU fork 的 make-nabu-adt.py 改造完成，并新增 `/cepheus-fbcon` 节点（补丁 0003 消费：reg=<物理地址 大小> + width/height/stride）
 - fbcon 的 reg/size/尺寸已按 cepheus 设备树定为 `0x9C000000/0x2400000`、
-  1080×2340、stride 4320；8796 workflow 显式传这些值。运行期内核以
-  `boot_args->Video` 为准，这里只影响 UEFI 未传 Video 时的回退。
+  1080×2340、stride 4320；8796 workflow 显式传这些值。真机实测 UEFI 交接的是
+  `0x90000000`，运行期以 `boot_args->Video` 为准，这里只影响 UEFI 未传 Video 时的回退。
 
 ## 6. CI 里的 fork 地址
 
