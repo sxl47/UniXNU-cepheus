@@ -481,7 +481,7 @@ index d0cdb50..274d5ba 100644
  #if !VMAPPLE && !defined(CEPHEUS)
  	MOV64   x1, SCTLR_EL1_DEFAULT
  	cmp		x0, x1
-@@ -844,6 +960,219 @@ common_start:
+@@ -844,6 +960,289 @@ common_start:
  #endif
  
  	// Return to arm_init()
@@ -517,7 +517,7 @@ index d0cdb50..274d5ba 100644
 +	 * Enter the probe with a PC-relative branch.  The stub is in this
 +	 * same text, so it is reachable in every translation regime --
 +	 * MMU on or off, V=P or KVA -- with no address arithmetic at all.
-+	 * lr keeps pointing at arm_init for the probe to ret into.
++	 * lr (adrp + x22 - x23, the boot-args slide) is examined below.
 +	 */
 +	b		cepheus_entry_probe
 +#endif
@@ -528,14 +528,17 @@ index d0cdb50..274d5ba 100644
 +/*
 + * Diagnostics stub, entered by the PC-relative branch above.  It
 + * runs in whatever translation regime the CPU is in and paints
-+ * marks into the black backdrop column (x = 0, 8 rows each), then
-+ * rets to lr -- arm_init, exactly as the stock code would:
++	 * marks into the black backdrop column (x = 0, 8 rows each), tests
++	 * lr against a PC-relative reference, and branches to arm_init
++	 * PC-relatively -- never through lr:
 + *
 + *   white   H-96   the branch arrived
 + *   yellow  H-120  MMU is ON at the current exception level
 + *   red     H-120  MMU is OFF at the current exception level
 + *   magenta H-144  the current exception level is EL2
 + *   cyan    H-168  one push/pop on the handed-over SP worked
++ *   blue    H-192  lr == PC-relative arm_init (boot-args slide is 0)
++ *   red     H-192  lr != PC-relative arm_init (slide nonzero/wrong)
 + *
 + * The C/D checkpoints cannot tell MMU state apart: they write
 + * through the V=P identity map, which succeeds with the MMU on or
@@ -543,8 +546,8 @@ index d0cdb50..274d5ba 100644
 + * exactly like that until the first KVA fetch -- what the
 + * yellow/red pair below decides.
 + *
-+ * x1-x7 and x9 are dead on this path; x0 (boot_args KVA), lr
-+ * (arm_init) and x20 (boot_args PA) are preserved.  The only
++	 * x1-x7, x9 and x10 are dead on this path; x0 (boot_args KVA), lr
++	 * and x20 (boot_args PA) are preserved.  The only
 + * stack access is the explicit push before the cyan mark.
 + */
 +cepheus_entry_probe:
@@ -698,6 +701,73 @@ index d0cdb50..274d5ba 100644
 +	b.ne	Lprobe4_row
 +	dsb		sy
 +Lprobe4_done:
-+	ret
++	/*
++	 * The stock exit is `ret` into lr, which start.s built with
++	 * adrp + x22 - x23 (the boot-args slide).  Nothing after that ret
++	 * has ever executed, while every PC-relative access works, so
++	 * compare lr with what a PC-relative reference computes in the
++	 * current regime, then enter arm_init without lr and without
++	 * the slide.  arm_init paints its slabs before touching args,
++	 * so a white slab next boot convicts the boot-args slide.
++	 */
++	adrp	x10, arm_init@page
++	add		x10, x10, arm_init@pageoff
++	cmp		x10, lr
++	b.ne	Lprobe_lr_diff
++	/* blue, rows H-192..H-185: lr == PC-relative arm_init (slide 0) */
++	ldr		x5, [x20, BA_VIDEO_BASE]
++	ldr		x4, [x20, BA_VIDEO_ROW_BYTES]
++	ldr		x6, [x20, BA_VIDEO_HEIGHT]
++	cbz		x5, Lprobe5_done
++	cbz		x4, Lprobe5_done
++	cmp		x6, #192
++	b.lo	Lprobe5_done
++	sub		x6, x6, #192
++	mul		x6, x6, x4
++	add		x5, x5, x6
++	MOV64	x7, 0xFF0000FF
++	mov		x2, #8
++Lprobe5_row:
++	mov		x3, x5
++	mov		x1, #128
++Lprobe5_px:
++	str		w7, [x3], #4
++	subs	x1, x1, #1
++	b.ne	Lprobe5_px
++	add		x5, x5, x4
++	subs	x2, x2, #1
++	b.ne	Lprobe5_row
++	dsb		sy
++Lprobe5_done:
++	b		Lprobe_lr_done
++Lprobe_lr_diff:
++	/* red, rows H-192..H-185: lr != PC-relative arm_init (slide wrong) */
++	ldr		x5, [x20, BA_VIDEO_BASE]
++	ldr		x4, [x20, BA_VIDEO_ROW_BYTES]
++	ldr		x6, [x20, BA_VIDEO_HEIGHT]
++	cbz		x5, Lprobe5r_done
++	cbz		x4, Lprobe5r_done
++	cmp		x6, #192
++	b.lo	Lprobe5r_done
++	sub		x6, x6, #192
++	mul		x6, x6, x4
++	add		x5, x5, x6
++	MOV64	x7, 0xFFFF0000
++	mov		x2, #8
++Lprobe5r_row:
++	mov		x3, x5
++	mov		x1, #128
++Lprobe5r_px:
++	str		w7, [x3], #4
++	subs	x1, x1, #1
++	b.ne	Lprobe5r_px
++	add		x5, x5, x4
++	subs	x2, x2, #1
++	b.ne	Lprobe5r_row
++	dsb		sy
++Lprobe5r_done:
++Lprobe_lr_done:
++	/* Enter arm_init PC-relatively: no lr, no adrp, no slide. */
++	b		arm_init
 +#endif
  Ltrampoline:

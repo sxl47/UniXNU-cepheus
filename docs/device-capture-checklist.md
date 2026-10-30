@@ -49,6 +49,8 @@ fastboot boot Mu-cepheus-unixnu.img    # 临时引导，不写盘
 | C4b | 同一位置的 8 px 条（104 宽，H-120）：**黄**＝MMU 已开，**红**＝MMU 未开 | 读 `CurrentEL` + 当前异常级别的 `SCTLR.*.M` 位。**这是整张表最关键的一条**：C/D 的写入走 V=P 映射，MMU 开不开都能成功，只有这条能区分"MMU 没开"（例如内核在 EL2 被引导、`SCTLR_EL1.M` 写了无效） | 位置固定为 H-120 |
 | C4c | 再往上 8 px **品红**条（104 宽，H-144） | 当前异常级别是 **EL2**（配合 C4b 的红条＝EL2 且 MMU 未开 ⇒ 根因实锤） | 位置固定为 H-144 |
 | C4d | 再往上 8 px **青**条（128 宽，H-168） | 探针往栈上压了一个值又弹回，说明**交接的 SP 可用** | 位置固定为 H-168 |
+| C4e | 再往上 8 px **蓝或红**条（128 宽，H-192） | `lr`（`adrp + x22 − x23`，即 boot args 的 slide）与 PC 相对算出的 `arm_init` 地址对比：**蓝**＝相等（slide 为 0），**红**＝不等（slide 错误，头号嫌疑） | 位置固定为 H-192 |
+| C4f | C4e 之后无条件执行：**PC 相对 `b arm_init`**（不经 lr、不经 slide） | 旧版 `ret` 进 `lr` 从未落进 arm_init；改用纯 PC 相对进入。若下方 C5 大方块出现 ⇒ boot args 的 virt/phys base 实锤错误 | — |
 | C5 | 黑底**右侧**（x=240 起）的两块大方块：下 **160×24 纯白**、上 **200×24 纯黄** | `arm_init()` 函数体跑到了：白块＝硬编码 `0x90000000/4320/2340` 能写；黄块＝`args->Video` 能解引用 | 白块为常量，黄块取自 `args->Video` |
 | D | 顶部一行 `CEPHEUS EARLY 0: video pa=0x... w=1080 h=2340 row=4320` | `arm_init()` 已进入；左下角色块前 48 px 变绿，C 侧打点接管同一屏幕 | `boot_args->Video` |
 | E | 底部 20 个 48 px 宽色块（stage 0..19），伴随 `CEPHEUS EARLY 0..19: <label>` | 内核逐段推进；停在第几格就是卡在第几个检查点之后 | 前 8 格 `boot_args->Video`，8 之后为同一物理帧的 physmap 别名 |
