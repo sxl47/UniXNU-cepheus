@@ -356,7 +356,7 @@ index 9f79343..d56aee1 100644
  	}
  	cepheus_early_putc('\n');
  }
-@@ -217,10 +323,36 @@ cepheus_early_panic(const char *fmt, va_list *args)
+@@ -247,10 +353,36 @@ cepheus_early_panic(const char *fmt, va_list *args)
  	__asm__ volatile("dsb sy" ::: "memory");
  }
  

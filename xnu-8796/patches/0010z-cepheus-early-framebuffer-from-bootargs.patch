@@ -168,7 +168,7 @@ index f355bac..9f79343 100644
  		}
  	}
  	__asm__ volatile("dsb sy" ::: "memory");
-@@ -104,6 +125,82 @@ cepheus_early_mark(unsigned int stage, const char *label)
+@@ -104,6 +125,112 @@ cepheus_early_mark(unsigned int stage, const char *label)
  	cepheus_early_putc('\n');
  }
  
@@ -248,6 +248,36 @@ index f355bac..9f79343 100644
 +	cepheus_early_putc('\n');
 +}
 +
++/*
++ * Raw boot-args visibility dump, called from start.s right after it
++ * publishes the framebuffer record and before it branches into
++ * arm_init().  p points at boot_args (PA while start.s still runs in
++ * the V=P window, KVA later -- both readable through the bootstrap
++ * page table).  The first 0x11 quadwords cover Revision/Version,
++ * virtBase, physBase, memSize, topOfKernelData, Video[0..5],
++ * machineType, deviceTreeP and deviceTreeLength -- exactly the fields
++ * PE_init_platform()/SecureDTInit() die on when the loader handoff is
++ * wrong.
++ */
++void
++cepheus_early_boot_dump(const volatile void *p)
++{
++	unsigned int i;
++
++	if (cepheus_fb_base == 0 || cepheus_fb_row_bytes == 0) {
++		return;
++	}
++	cepheus_early_video((uintptr_t)cepheus_fb_base, cepheus_fb_row_bytes,
++	    cepheus_fb_width, cepheus_fb_height);
++	cepheus_early_string("CEPHEUS ARGS DUMP\n");
++	for (i = 0; i < 0x11; i++) {
++		cepheus_early_string("a[0x");
++		cepheus_early_hex_digits(i, 2);
++		cepheus_early_string("]=");
++		cepheus_early_hex(((const volatile uint64_t *)p)[i]);
++		cepheus_early_putc('\n');
++	}
++}
  void
  cepheus_early_panic(const char *fmt, va_list *args)
  {
@@ -500,7 +530,7 @@ index d0cdb50..274d5ba 100644
  #if !VMAPPLE && !defined(CEPHEUS)
  	MOV64   x1, SCTLR_EL1_DEFAULT
  	cmp		x0, x1
-@@ -844,6 +960,346 @@ common_start:
+@@ -844,6 +960,351 @@ common_start:
  #endif
  
  	// Return to arm_init()
@@ -587,6 +617,11 @@ index d0cdb50..274d5ba 100644
 +	add		x9, x9, EXT(cepheus_fb_height)@pageoff
 +	ldr		w10, [x20, BA_VIDEO_HEIGHT]
 +	str		w10, [x9]
++	/* Show what the kernel will read: dump boot args[0x00..0x80]. */
++	mov		x19, x0
++	mov		x0, x20
++	bl		EXT(cepheus_early_boot_dump)
++	mov		x0, x19
 +	/* band 1, white, rows H-96..H-89: the branch arrived */
 +	ldr		x5, [x20, BA_VIDEO_BASE]
 +	ldr		x4, [x20, BA_VIDEO_ROW_BYTES]
