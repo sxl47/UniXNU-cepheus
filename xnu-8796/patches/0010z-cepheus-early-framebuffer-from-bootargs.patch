@@ -2,7 +2,7 @@ diff --git a/osfmk/arm/arm_init.c b/osfmk/arm/arm_init.c
 index abfc169..ec3e53b 100644
 --- a/osfmk/arm/arm_init.c
 +++ b/osfmk/arm/arm_init.c
-@@ -347,6 +347,66 @@ arm_init(
+@@ -347,6 +347,68 @@ arm_init(
  	DTEntry chosen = NULL;
  	unsigned int dt_entry_size = 0;
  
@@ -66,9 +66,19 @@ index abfc169..ec3e53b 100644
 +	cepheus_early_video((uintptr_t)cepheus_fb_base, cepheus_fb_row_bytes,
 +	    cepheus_fb_width, cepheus_fb_height);
 +#endif
++	/* Raw boot_args quads; the implementation lives in cepheus_early.c. */
++extern void cepheus_early_boot_dump(const volatile void *p, const char *tag);
  	cepheus_early_mark(1, "arm_init entered (MMU on)");
  
  	arm_setup_pre_sign();
+@@ -355,5 +417,7 @@ arm_init(
+ 	/* If kernel integrity is supported, use a constant copy of the boot args. */
++	cepheus_early_boot_dump(args, "post-slide");
+ 	const_boot_args = *args;
+ 	BootArgs = args = &const_boot_args;
++	cepheus_early_boot_dump(args, "const-copy");
+ 
+ 	cpu_data_init(&BootCpuData);
 
 diff --git a/osfmk/arm64/cepheus_early.c b/osfmk/arm64/cepheus_early.c
 index f355bac..9f79343 100644
@@ -168,7 +178,7 @@ index f355bac..9f79343 100644
  		}
  	}
  	__asm__ volatile("dsb sy" ::: "memory");
-@@ -104,6 +125,112 @@ cepheus_early_mark(unsigned int stage, const char *label)
+@@ -104,6 +125,114 @@ cepheus_early_mark(unsigned int stage, const char *label)
  	cepheus_early_putc('\n');
  }
  
@@ -260,16 +270,18 @@ index f355bac..9f79343 100644
 + * wrong.
 + */
 +void
-+cepheus_early_boot_dump(const volatile void *p)
++cepheus_early_boot_dump(const volatile void *p, const char *tag)
 +{
 +	unsigned int i;
 +
 +	if (cepheus_fb_base == 0 || cepheus_fb_row_bytes == 0) {
 +		return;
 +	}
-+	cepheus_early_video((uintptr_t)cepheus_fb_base, cepheus_fb_row_bytes,
-+	    cepheus_fb_width, cepheus_fb_height);
-+	cepheus_early_string("CEPHEUS ARGS DUMP\n");
++	cepheus_early_string("CEPHEUS ARGS ");
++	cepheus_early_string(tag ? tag : "DUMP");
++	cepheus_early_string(" @0x");
++	cepheus_early_hex((uintptr_t)p);
++	cepheus_early_putc('\n');
 +	for (i = 0; i < 0x11; i++) {
 +		cepheus_early_string("a[0x");
 +		cepheus_early_hex_digits(i, 2);
@@ -530,7 +542,7 @@ index d0cdb50..274d5ba 100644
  #if !VMAPPLE && !defined(CEPHEUS)
  	MOV64   x1, SCTLR_EL1_DEFAULT
  	cmp		x0, x1
-@@ -844,6 +960,351 @@ common_start:
+@@ -844,6 +960,366 @@ common_start:
  #endif
  
  	// Return to arm_init()
@@ -617,9 +629,24 @@ index d0cdb50..274d5ba 100644
 +	add		x9, x9, EXT(cepheus_fb_height)@pageoff
 +	ldr		w10, [x20, BA_VIDEO_HEIGHT]
 +	str		w10, [x9]
-+	/* Show what the kernel will read: dump boot args[0x00..0x80]. */
++	/* Point the C console at the firmware framebuffer (prints its banner), */
++	/* then dump what the kernel was handed: boot args[0x00..0x80].        */
++	adrp	x9, EXT(cepheus_fb_base)@page
++	add		x9, x9, EXT(cepheus_fb_base)@pageoff
++	ldr		w0, [x9]
++	adrp	x9, EXT(cepheus_fb_row_bytes)@page
++	add		x9, x9, EXT(cepheus_fb_row_bytes)@pageoff
++	ldr		w1, [x9]
++	adrp	x9, EXT(cepheus_fb_width)@page
++	add		x9, x9, EXT(cepheus_fb_width)@pageoff
++	ldr		w2, [x9]
++	adrp	x9, EXT(cepheus_fb_height)@page
++	add		x9, x9, EXT(cepheus_fb_height)@pageoff
++	ldr		w3, [x9]
++	bl		EXT(cepheus_early_video)
 +	mov		x19, x0
 +	mov		x0, x20
++	mov		x1, #0
 +	bl		EXT(cepheus_early_boot_dump)
 +	mov		x0, x19
 +	/* band 1, white, rows H-96..H-89: the branch arrived */

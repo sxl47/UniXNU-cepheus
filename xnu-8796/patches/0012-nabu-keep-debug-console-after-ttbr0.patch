@@ -2,7 +2,7 @@ diff --git a/osfmk/arm/arm_init.c b/osfmk/arm/arm_init.c
 index ec3e53b..8bfaed6 100644
 --- a/osfmk/arm/arm_init.c
 +++ b/osfmk/arm/arm_init.c
-@@ -532,6 +532,7 @@ arm_init(
+@@ -532,6 +536,7 @@ arm_init(
  
  	cepheus_early_mark(7, "entering arm_vm_init");
  	arm_vm_init(xmaxmem, args);
@@ -10,7 +10,7 @@ index ec3e53b..8bfaed6 100644
  
  	if (debug_boot_arg) {
  		patch_low_glo();
-@@ -544,7 +545,17 @@ arm_init(
+@@ -544,7 +549,17 @@ arm_init(
  	PE_consistent_debug_inherit();
  
  	/* Setup debugging output. */
@@ -356,7 +356,7 @@ index 9f79343..d56aee1 100644
  	}
  	cepheus_early_putc('\n');
  }
-@@ -247,10 +353,36 @@ cepheus_early_panic(const char *fmt, va_list *args)
+@@ -247,10 +355,36 @@ cepheus_early_panic(const char *fmt, va_list *args)
  	__asm__ volatile("dsb sy" ::: "memory");
  }
  
