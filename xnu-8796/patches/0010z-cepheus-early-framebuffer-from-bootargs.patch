@@ -150,7 +150,7 @@ index f355bac..9f79343 100644
  			    (early_row * EARLY_CELL_H + gy * EARLY_SCALE + sy) * EARLY_STRIDE +
  			    early_col * EARLY_CELL_W;
  			for (unsigned int gx = 0; gx < 8; gx++) {
-@@ -91,9 +107,14 @@ cepheus_early_mark(unsigned int stage, const char *label)
+@@ -91,9 +107,30 @@ cepheus_early_mark(unsigned int stage, const char *label)
  		return;
  	}
  	uint32_t color = 0xff00ff00u | (stage * 28u << 16);
@@ -167,8 +167,24 @@ index f355bac..9f79343 100644
 +			EARLY_PTR[y * EARLY_STRIDE + x] = color;
  		}
  	}
++	/*
++	 * Second signal from the same call: a 16x18 tick in the black backdrop
++	 * at x = 240 + 24*stage, rows height-132..height-117.  The bottom band
++	 * sits inside the firmware's green bar, so what a photo can be read by is
++	 * the x position: how far right the last tick is, is how far arm_init()
++	 * got before it stopped.
++	 */
++	if (early_height >= 160 && (240u + 24u * stage + 18u) <= early_width) {
++		unsigned int tx = 240u + 24u * stage;
++		for (unsigned int r = 0; r < 16; r++) {
++			for (unsigned int c = 0; c < 18; c++) {
++				EARLY_PTR[(early_height - 132 + r) * EARLY_STRIDE + tx + c] =
++				    color;
++			}
++		}
++	}
  	__asm__ volatile("dsb sy" ::: "memory");
-@@ -104,6 +125,82 @@ cepheus_early_mark(unsigned int stage, const char *label)
+@@ -104,6 +141,82 @@ cepheus_early_mark(unsigned int stage, const char *label)
  	cepheus_early_putc('\n');
  }
  
