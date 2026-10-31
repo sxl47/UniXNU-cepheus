@@ -2,7 +2,7 @@ diff --git a/osfmk/arm/arm_init.c b/osfmk/arm/arm_init.c
 index abfc169..ec3e53b 100644
 --- a/osfmk/arm/arm_init.c
 +++ b/osfmk/arm/arm_init.c
-@@ -347,6 +347,68 @@ arm_init(
+@@ -347,6 +347,69 @@ arm_init(
  	DTEntry chosen = NULL;
  	unsigned int dt_entry_size = 0;
  
@@ -68,11 +68,15 @@ index abfc169..ec3e53b 100644
 +#endif
 +	/* Raw boot_args quads; the implementation lives in cepheus_early.c. */
 +extern void cepheus_early_boot_dump(const volatile void *p, const char *tag);
++extern volatile unsigned long cepheus_boot_regs[24];
  	cepheus_early_mark(1, "arm_init entered (MMU on)");
  
  	arm_setup_pre_sign();
-@@ -355,5 +417,7 @@ arm_init(
+@@ -355,5 +418,10 @@ arm_init(
  	/* If kernel integrity is supported, use a constant copy of the boot args. */
++	cepheus_early_boot_dump(cepheus_boot_regs, "regs0");
++	cepheus_early_boot_dump(cepheus_boot_regs + 17, "regs1");
++	cepheus_early_boot_dump((const volatile void *)cepheus_boot_regs[0], "args-PA");
 +	cepheus_early_boot_dump(args, "post-slide");
  	const_boot_args = *args;
  	BootArgs = args = &const_boot_args;
@@ -178,7 +182,7 @@ index f355bac..9f79343 100644
  		}
  	}
  	__asm__ volatile("dsb sy" ::: "memory");
-@@ -104,6 +125,114 @@ cepheus_early_mark(unsigned int stage, const char *label)
+@@ -104,6 +125,117 @@ cepheus_early_mark(unsigned int stage, const char *label)
  	cepheus_early_putc('\n');
  }
  
@@ -290,6 +294,9 @@ index f355bac..9f79343 100644
 +		cepheus_early_putc('\n');
 +	}
 +}
++
++/* Register/page-table record start.s publishes for arm_init(). */
++volatile unsigned long cepheus_boot_regs[24];
  void
  cepheus_early_panic(const char *fmt, va_list *args)
  {
@@ -542,7 +549,7 @@ index d0cdb50..274d5ba 100644
  #if !VMAPPLE && !defined(CEPHEUS)
  	MOV64   x1, SCTLR_EL1_DEFAULT
  	cmp		x0, x1
-@@ -844,6 +960,375 @@ common_start:
+@@ -844,6 +960,411 @@ common_start:
  #endif
  
  	// Return to arm_init()
@@ -914,6 +921,42 @@ index d0cdb50..274d5ba 100644
 +	 */
 +	add		x0, x20, x22
 +	sub		x0, x0, x23
++	/*
++	 * Publish the register and page-table record for arm_init(): the
++	 * official bases, the live translation controls, the computed args
++	 * KVA, the last eight entries of the TTBR1 root page and the two
++	 * entries at the root index of that args KVA.  All reads go through
++	 * the V=P map, which is proven good, and only dead scratch
++	 * registers are consumed.
++	 */
++	adrp	x9, EXT(cepheus_boot_regs)@page
++	add		x9, x9, EXT(cepheus_boot_regs)@pageoff
++	stp		x20, x21, [x9]
++	stp		x22, x23, [x9, #16]
++	stp		x24, x25, [x9, #32]
++	mrs		x10, ttbr0_el1
++	mrs		x11, ttbr1_el1
++	stp		x10, x11, [x9, #48]
++	mrs		x12, tcr_el1
++	mrs		x13, sctlr_el1
++	stp		x12, x13, [x9, #64]
++	str		x0, [x9, #80]
++	and		x11, x11, #TTBR_BADDR_MASK
++	add		x10, x11, #0xFC0
++	ldp		x12, x13, [x10], #16
++	stp		x12, x13, [x9, #88]
++	ldp		x12, x13, [x10], #16
++	stp		x12, x13, [x9, #104]
++	ldp		x12, x13, [x10], #16
++	stp		x12, x13, [x9, #120]
++	ldp		x12, x13, [x10]
++	stp		x12, x13, [x9, #136]
++	ubfx	x12, x0, #30, #9
++	add		x12, x11, x12, lsl #3
++	ldr		x13, [x12]
++	str		x13, [x9, #152]
++	ldr		x13, [x12, #8]
++	str		x13, [x9, #160]
 +	/* Enter arm_init PC-relatively: no lr, no adrp, no slide. */
 +	b		EXT(arm_init)
 +#endif
