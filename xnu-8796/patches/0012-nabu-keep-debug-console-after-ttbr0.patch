@@ -191,7 +191,7 @@ index 9f79343..d56aee1 100644
  		}
  	}
  	early_col++;
-@@ -100,26 +144,47 @@ cepheus_early_string(const char *s)
+@@ -100,26 +144,72 @@ cepheus_early_string(const char *s)
  	}
  }
  
@@ -230,6 +230,31 @@ index 9f79343..d56aee1 100644
 +		    (uintptr_t)(EARLY_PTR + y * EARLY_STRIDE + x_start),
 +		    (unsigned long)(x_end - x_start) * 4u);
  	}
++	/*
++	 * Position-coded twin of the band above: a 22x16 block on rows
++	 * height-132..height-117, at x = 24*stage.  Those rows sit inside the
++	 * 480-pixel-wide black backdrop start.s lays down, between the two
++	 * slabs and the bottom band, so the block is legible whatever colour
++	 * the firmware bar underneath is.  Stage 20 ends at x=479, exactly the
++	 * backdrop's right edge.
++	 *
++	 * Why this exists: the band above is inside the green bar and the text is
++	 * two pixels per font pixel, so on a photo the only reliable signal is
++	 * geometry -- how far right the last block is, is how far arm_init() got.
++	 */
++	if (early_height >= 160 && stage <= 20) {
++		unsigned int tx = stage * 24u;
++		if (tx + 22u <= early_width) {
++			for (unsigned int r = 0; r < 16; r++) {
++				volatile uint32_t *p = EARLY_PTR +
++				    (early_height - 132 + r) * EARLY_STRIDE + tx;
++				for (unsigned int c = 0; c < 22; c++) {
++					p[c] = color;
++				}
++			}
++			__asm__ volatile("dsb sy" ::: "memory");
++		}
++	}
 -	__asm__ volatile("dsb sy" ::: "memory");
 +}
 +
@@ -249,7 +274,7 @@ index 9f79343..d56aee1 100644
  	cepheus_early_string(": ");
  	cepheus_early_string(label);
  	cepheus_early_putc('\n');
-@@ -142,9 +207,18 @@ cepheus_early_hex(uintptr_t v)
+@@ -142,9 +232,18 @@ cepheus_early_hex(uintptr_t v)
  }
  
  static void
@@ -270,7 +295,7 @@ index 9f79343..d56aee1 100644
  }
  
  /*
-@@ -162,9 +236,13 @@ cepheus_early_video(uintptr_t base, unsigned int row_bytes,
+@@ -162,9 +261,13 @@ cepheus_early_video(uintptr_t base, unsigned int row_bytes,
      unsigned int width, unsigned int height)
  {
  	/* One full cell plus the bottom band has to fit, or the console has zero
@@ -286,7 +311,7 @@ index 9f79343..d56aee1 100644
  
  	if (usable) {
  		early_fb = base;
-@@ -178,25 +256,28 @@ cepheus_early_video(uintptr_t base, unsigned int row_bytes,
+@@ -178,25 +281,28 @@ cepheus_early_video(uintptr_t base, unsigned int row_bytes,
  		early_started = 0;
  	}
  
@@ -331,7 +356,7 @@ index 9f79343..d56aee1 100644
  	}
  	cepheus_early_putc('\n');
  }
-@@ -217,10 +298,36 @@ cepheus_early_panic(const char *fmt, va_list *args)
+@@ -217,10 +323,36 @@ cepheus_early_panic(const char *fmt, va_list *args)
  	__asm__ volatile("dsb sy" ::: "memory");
  }
  
