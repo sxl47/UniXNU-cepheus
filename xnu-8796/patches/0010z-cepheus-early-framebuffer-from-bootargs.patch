@@ -2,68 +2,70 @@ diff --git a/osfmk/arm/arm_init.c b/osfmk/arm/arm_init.c
 index abfc169..ec3e53b 100644
 --- a/osfmk/arm/arm_init.c
 +++ b/osfmk/arm/arm_init.c
-@@ -347,6 +347,64 @@ arm_init(
+@@ -347,6 +347,66 @@ arm_init(
  	DTEntry chosen = NULL;
  	unsigned int dt_entry_size = 0;
  
++#if defined(CEPHEUS)
 +	/*
 +	 * Two fat blocks above the assembly checkpoints, because "no text on
-+	 * screen" still has three possible causes and a photo has to separate
-+	 * them. They are deliberately not thin bands: on hardware the firmware
-+	 * paints a full-width green bar across the bottom of the panel, and the
-+	 * first version of these two markers was a pair of 64x8 cyan / pale
-+	 * bands sitting inside that bar -- green on green, unreadable. start.s
-+	 * lays a black backdrop behind this whole area before any colour goes
-+	 * down, so everything here is drawn on black.
++	 * screen" still has two possible causes and a photo has to separate them.
++	 * They are deliberately not thin bands: on hardware the firmware paints a
++	 * full-width green bar across the bottom of the panel, and the first
++	 * version of these markers was a pair of 64x8 cyan / pale bands sitting
++	 * inside that bar -- green on green, unreadable. start.s lays a black
++	 * backdrop behind this whole area before any colour goes down.
 +	 *
-+	 *   lower block (white, 160x24)  drawn through args->Video at row
-+	 *      (height-160): plain C stores reach the panel from arm_init().
-+	 *   upper block (yellow, 200x24) same shape at row (height-192), so
-+	 *      seeing both means arm_init() really ran its first statements.
-+	 *      Both surfaces are the one start.s already proved writable.
++	 * Every number here comes from the framebuffer record that start.s
++	 * publishes in cepheus_early.c, never from args. The previous version read
++	 * args->Video and died on that load on every boot: args is a KVA, and a
++	 * KVA read faults outright if the bootstrap window does not cover the
++	 * boot_args pages -- which sit below the kernel image, outside the window
++	 * start.s builds. Plain loads are also free to move above a volatile
++	 * store loop, so the fault ran before the blocks and nothing was painted.
++	 *
++	 *   lower block (white, 160x24) at row (height-160), x 240..399
++	 *   upper block (yellow, 200x24) at row (height-192), x 240..439
 +	 *
 +	 * Neither     => the branch into arm_init() never landed, so the entry
 +	 *                path itself is still broken.
-+	 * White only  => impossible now: both blocks use the same surface.
-+	 * Both        => arm_init() entered and args is dereferenceable, so
-+	 *                whatever dies next dies after these lines.
-+	 *
-+	 * The bootstrap world maps only [kernel PA, end of RAM) V=P; the old
-+	 * hardcoded 0x90000000 store sat OUTSIDE that window and faulted
-+	 * before anything else in arm_init() could ever run.
++	 * Both        => arm_init()'s first statements ran and the framebuffer
++	 *                record is usable, so whatever dies next dies later.
 +	 */
 +	{
-+		volatile uint32_t *row = (volatile uint32_t *)(args->Video.v_baseAddr +
-+		    (args->Video.v_height - 160) * args->Video.v_rowBytes);
-+		for (unsigned int r = 0; r < 24; r++) {
-+			for (unsigned int c = 0; c < 160; c++) {
-+				row[240 + c] = 0xffffffffu;
++		uint32_t fb = cepheus_fb_base;
++		uint32_t stride = cepheus_fb_row_bytes / sizeof(uint32_t);
++		uint32_t height = cepheus_fb_height;
++
++		if (fb != 0 && stride != 0 && height > 192) {
++			volatile uint32_t *row = (volatile uint32_t *)(uintptr_t)fb +
++			    (size_t)(height - 160) * stride;
++			for (unsigned int r = 0; r < 24; r++) {
++				for (unsigned int c = 0; c < 160; c++) {
++					row[240 + c] = 0xffffffffu;
++				}
++				row += stride;
 +			}
-+			row += args->Video.v_rowBytes / sizeof(uint32_t);
-+		}
-+		__asm__ volatile("dsb sy" ::: "memory");
-+	}
-+	{
-+		volatile uint32_t *row = (volatile uint32_t *)
-+		    (args->Video.v_baseAddr +
-+		    (args->Video.v_height - 192) * args->Video.v_rowBytes);
-+		for (unsigned int r = 0; r < 24; r++) {
-+			for (unsigned int c = 0; c < 200; c++) {
-+				row[240 + c] = 0xffffff00u;
++			row = (volatile uint32_t *)(uintptr_t)fb +
++			    (size_t)(height - 192) * stride;
++			for (unsigned int r = 0; r < 24; r++) {
++				for (unsigned int c = 0; c < 200; c++) {
++					row[240 + c] = 0xffffff00u;
++				}
++				row += stride;
 +			}
-+			row += args->Video.v_rowBytes / sizeof(uint32_t);
++			__asm__ volatile("dsb sy" ::: "memory");
 +		}
-+		__asm__ volatile("dsb sy" ::: "memory");
 +	}
++	/* Nothing below may be hoisted above the blocks: this is the barrier. */
++	__asm__ volatile("" ::: "memory");
 +	/*
-+	 * Follow the firmware's framebuffer before drawing anything: the splash
-+	 * address baked into cepheus_early.c is a guess taken from the SoC DTs,
-+	 * while args->Video is the surface the loader actually had on screen.
-+	 * start.s already preferred args->Video for the stage-0 band; this makes
-+	 * the C-side marks and panics follow the same surface.
++	 * Point the C-side marks and panics at the same surface, still without
++	 * touching args.
 +	 */
-+	cepheus_early_video(args->Video.v_baseAddr, args->Video.v_rowBytes,
-+	    args->Video.v_width, args->Video.v_height);
++	cepheus_early_video((uintptr_t)cepheus_fb_base, cepheus_fb_row_bytes,
++	    cepheus_fb_width, cepheus_fb_height);
++#endif
  	cepheus_early_mark(1, "arm_init entered (MMU on)");
  
  	arm_setup_pre_sign();
@@ -72,7 +74,7 @@ diff --git a/osfmk/arm64/cepheus_early.c b/osfmk/arm64/cepheus_early.c
 index f355bac..9f79343 100644
 --- a/osfmk/arm64/cepheus_early.c
 +++ b/osfmk/arm64/cepheus_early.c
-@@ -10,15 +10,31 @@
+@@ -10,15 +10,37 @@
  #include <stdint.h>
  #include <kern/misc_protos.h>
  
@@ -107,6 +109,12 @@ index f355bac..9f79343 100644
 +
 +#define EARLY_PTR ((volatile uint32_t *)early_fb)
 +#define EARLY_STRIDE (early_row_bytes / 4u)
++
++/* Filled by start.s from boot_args before it branches into arm_init(). */
++volatile uint32_t cepheus_fb_base;
++volatile uint32_t cepheus_fb_row_bytes;
++volatile uint32_t cepheus_fb_width;
++volatile uint32_t cepheus_fb_height;
  
  extern unsigned char iso_font[256 * 16];
  
@@ -247,13 +255,23 @@ diff --git a/osfmk/arm64/cepheus_early.h b/osfmk/arm64/cepheus_early.h
 index 26db7f2..55633ef 100644
 --- a/osfmk/arm64/cepheus_early.h
 +++ b/osfmk/arm64/cepheus_early.h
-@@ -4,13 +4,24 @@
+@@ -4,13 +4,34 @@
  
  #include <pexpert/arm64/board_config.h>
  #include <stdarg.h>
 +#include <stdint.h>
  
  #if defined(CEPHEUS)
++/*
++ * Framebuffer record published by start.s straight out of boot_args, in
++ * physical addresses.  arm_init() reads this instead of dereferencing its
++ * args pointer: args is a KVA, and nothing has proved that the bootstrap
++ * KVA window covers the boot_args pages.
++ */
++extern volatile uint32_t cepheus_fb_base;
++extern volatile uint32_t cepheus_fb_row_bytes;
++extern volatile uint32_t cepheus_fb_width;
++extern volatile uint32_t cepheus_fb_height;
 +void cepheus_early_video(uintptr_t base, unsigned int row_bytes,
 +    unsigned int width, unsigned int height);
  void cepheus_early_mark(unsigned int stage, const char *label);
@@ -276,7 +294,7 @@ diff --git a/osfmk/arm64/genassym.c b/osfmk/arm64/genassym.c
 index 19eb823..4c56dbf 100644
 --- a/osfmk/arm64/genassym.c
 +++ b/osfmk/arm64/genassym.c
-@@ -299,6 +299,10 @@ main(int     argc,
+@@ -299,6 +299,11 @@ main(int     argc,
  	DECLARE("BA_MEM_SIZE", offsetof(struct boot_args, memSize));
  	DECLARE("BA_TOP_OF_KERNEL_DATA", offsetof(struct boot_args, topOfKernelData));
  	DECLARE("BA_BOOT_FLAGS", offsetof(struct boot_args, bootFlags));
@@ -284,6 +302,7 @@ index 19eb823..4c56dbf 100644
 +	DECLARE("BA_VIDEO_BASE", offsetof(struct boot_args, Video.v_baseAddr));
 +	DECLARE("BA_VIDEO_ROW_BYTES", offsetof(struct boot_args, Video.v_rowBytes));
 +	DECLARE("BA_VIDEO_HEIGHT", offsetof(struct boot_args, Video.v_height));
++	DECLARE("BA_VIDEO_WIDTH", offsetof(struct boot_args, Video.v_width));
  
  	DECLARE("SR_RESTORE_TCR_EL1", offsetof(struct sysreg_restore, tcr_el1));
  
@@ -481,7 +500,7 @@ index d0cdb50..274d5ba 100644
  #if !VMAPPLE && !defined(CEPHEUS)
  	MOV64   x1, SCTLR_EL1_DEFAULT
  	cmp		x0, x1
-@@ -844,6 +960,289 @@ common_start:
+@@ -844,6 +960,346 @@ common_start:
  #endif
  
  	// Return to arm_init()
@@ -551,6 +570,23 @@ index d0cdb50..274d5ba 100644
 + * stack access is the explicit push before the cyan mark.
 + */
 +cepheus_entry_probe:
++	/* Publish the framebuffer record in PA space for arm_init(). */
++	adrp	x9, EXT(cepheus_fb_base)@page
++	add		x9, x9, EXT(cepheus_fb_base)@pageoff
++	ldr		w10, [x20, BA_VIDEO_BASE]
++	str		w10, [x9]
++	adrp	x9, EXT(cepheus_fb_row_bytes)@page
++	add		x9, x9, EXT(cepheus_fb_row_bytes)@pageoff
++	ldr		w10, [x20, BA_VIDEO_ROW_BYTES]
++	str		w10, [x9]
++	adrp	x9, EXT(cepheus_fb_width)@page
++	add		x9, x9, EXT(cepheus_fb_width)@pageoff
++	ldr		w10, [x20, BA_VIDEO_WIDTH]
++	str		w10, [x9]
++	adrp	x9, EXT(cepheus_fb_height)@page
++	add		x9, x9, EXT(cepheus_fb_height)@pageoff
++	ldr		w10, [x20, BA_VIDEO_HEIGHT]
++	str		w10, [x9]
 +	/* band 1, white, rows H-96..H-89: the branch arrived */
 +	ldr		x5, [x20, BA_VIDEO_BASE]
 +	ldr		x4, [x20, BA_VIDEO_ROW_BYTES]
@@ -767,6 +803,46 @@ index d0cdb50..274d5ba 100644
 +	dsb		sy
 +Lprobe5r_done:
 +Lprobe_lr_done:
++	/*
++	 * Is the boot_args KVA inside the mapped window [x22, x22+x24)? Pure
++	 * arithmetic, so it cannot fault. If it is outside, arm_init()'s first
++	 * args->Video load takes a translation fault and no slab can appear no
++	 * matter what it draws with.
++	 */
++	mov		x9, x22
++	cmp		x0, x9
++	b.lo	Lprobe6_out
++	add		x9, x22, x24
++	cmp		x0, x9
++	b.hs	Lprobe6_out
++	MOV64	x7, 0xFF00FF00
++	b		Lprobe6_paint
++Lprobe6_out:
++	MOV64	x7, 0xFFFF0000
++Lprobe6_paint:
++	ldr		x5, [x20, BA_VIDEO_BASE]
++	ldr		x4, [x20, BA_VIDEO_ROW_BYTES]
++	ldr		x6, [x20, BA_VIDEO_HEIGHT]
++	cbz		x5, Lprobe6_done
++	cbz		x4, Lprobe6_done
++	cmp		x6, #176
++	b.lo	Lprobe6_done
++	sub		x6, x6, #176
++	mul		x6, x6, x4
++	add		x5, x5, x6
++	mov		x2, #8
++Lprobe6_row:
++	mov		x3, x5
++	mov		x1, #128
++Lprobe6_px:
++	str		w7, [x3], #4
++	subs	x1, x1, #1
++	b.ne	Lprobe6_px
++	add		x5, x5, x4
++	subs	x2, x2, #1
++	b.ne	Lprobe6_row
++	dsb		sy
++Lprobe6_done:
 +	/* Enter arm_init PC-relatively: no lr, no adrp, no slide. */
 +	b		EXT(arm_init)
 +#endif

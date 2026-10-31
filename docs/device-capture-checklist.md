@@ -51,7 +51,8 @@ fastboot boot Mu-cepheus-unixnu.img    # 临时引导，不写盘
 | C4d | 再往上 8 px **青**条（128 宽，H-168） | 探针往栈上压了一个值又弹回，说明**交接的 SP 可用** | 位置固定为 H-168 |
 | C4e | 再往上 8 px **蓝或红**条（128 宽，H-192） | `lr`（`adrp + x22 − x23`，即 boot args 的 slide 换算）与 PC 相对的 `arm_init` PA 对比：**红**＝不等 ⇒ **正常状态**（DarwinBoot 填 `VirtualBase=链接基址、PhysicalBase=加载地址`，slide 本来就非 0，`lr` 是 arm_init 的 KVA）；**蓝**＝相等 ⇒ 反而异常（slide 为 0，boot args 填错）。2026-10-31 真机实测：**红**（正常） | 位置固定为 H-192 |
 | C4f | C4e 之后无条件执行：**PC 相对 `b arm_init`**（不经 lr、不经 slide） | 二进制已验证：`b` 目标 = `_arm_init` KVA（0xfffffe0007adad94），链接正确。`b` 后的下一条证据就是 C5 大方块 | — |
-| C5 | 黑底**右侧**（x=240 起）的两块大方块：下 **160×24 纯白**（行 H-160）、上 **200×24 纯黄**（行 H-192 右段） | `arm_init()` 函数体跑到了：两块都走 `args->Video`（探针色带已证明唯一可写表面）。**旧版白块写硬编码 `0x90000000`，在 bootstrap V=P 窗口 [内核 PA, 内存末尾) 之外，一写就同步异常静默死亡**——这就是历轮 `mark(1)` 文字从不出现的原因 | 两块均取自 `args->Video` |
+| C4g | 再往上 8 px 条（128 宽，H-176）：**绿**＝boot args 的 KVA 落在 bootstrap KVA 窗口 `[x22, x22+x24)` 内；**红**＝落在窗口外 | 纯算术比较（`cmp x0, x22` / `cmp x0, x22+x24`），**不会触发异常**。红 ⇒ `arm_init()` 第一句 `args->Video` 的 KVA 读取必然翻译失败，C5 一颗方块都画不出来。这是 2026-10-31 之前历轮的真正死因候选 | 位置固定为 H-176 |
+| C5 | 黑底**右侧**（x=240 起）的两块大方块：下 **160×24 纯白**（行 H-160）、上 **200×24 纯黄**（行 H-192 右段） | `arm_init()` 函数体跑到了。两块**不再读 `args`**，改读 start.s 在 `cepheus_early.c` 里发布的 `cepheus_fb_*`（PA 值），所以就算 `args` 的 KVA 不可用也照样能画——这正是把「入口到没到」和「args 能不能用」拆开的关键 | `boot_args->Video`，由 start.s 在跳转前落进全局变量 |
 | D | 顶部一行 `CEPHEUS EARLY 0: video pa=0x... w=1080 h=2340 row=4320` | `arm_init()` 已进入；左下角色块前 48 px 变绿，C 侧打点接管同一屏幕 | `boot_args->Video` |
 | E | 底部 20 个 48 px 宽色块（stage 0..19），伴随 `CEPHEUS EARLY 0..19: <label>` | 内核逐段推进；停在第几格就是卡在第几个检查点之后 | 前 8 格 `boot_args->Video`，8 之后为同一物理帧的 physmap 别名 |
 | F | 整屏**深蓝底** + `cepheus fbcon ready: pa=0x... WxH row N` | `serial_init()` 走到 framebuffer 控制台注册，之后的 kprintf 都可见 | `PE_state.video`，回退 ADT |
@@ -91,11 +92,18 @@ fastboot boot Mu-cepheus-unixnu.img    # 临时引导，不写盘
     - C4a–C4d 全有（白黄品红青）⇒ MMU 开、EL1、栈都好，`ret` 进 `arm_init`
       之后的死点在 arm_init 函数体，看 C5。
   - **C5 判读**（两块大方块在黑底右侧，与左列色带错开，避免重叠）：
-    - 白 + 黄都有 ⇒ 进了 `arm_init()`，`args` 也可用 ⇒ 黑屏的原因在
-      `cepheus_early_video()` / `cepheus_early_mark()` 内部，不在入口。
+    - 白 + 黄都有 ⇒ 进了 `arm_init()`，函数体在跑 ⇒ 黑屏的原因在
+      `cepheus_early_video()` / `cepheus_early_mark()` 内部或更后面，不在入口。
     - 两块都没有（只有黑底 + 左列色带）⇒ `arm_init()` 的函数体没跑到，
-      结合 C4a/C4b 定位。（2026-10-31 之前的状态：其实是 arm_init 已进入、
-      但白块写 `0x90000000` 越出 bootstrap V=P 窗口直接异常死亡。）
+      结合 C4a/C4b/C4g 定位。如果此时 C4g 是**红**，说明 `args` 的 KVA 在
+      窗口外，`arm_init()` 一进门读 `args->Video` 就翻译失败；新版本已把
+      打点与 `args` 解耦，所以**红 + 有白黄方块**才是可以继续往下走的组合。
+    - 2026-10-31 的两轮实测（C4g 尚未上线时）：`b` 目标是正确的 `_arm_init`，
+      但白黄方块始终不出现。二进制反汇编显示 prologue 之后**第一条就是
+      `ldr x9, [x0, #0x28]`（args->Video）**，而且编译器把后面
+      `cepheus_early_video(args->Video...)` 的载入**提到了 volatile 写循环之前**
+      ⇒ 一旦 `args` 的 KVA 不可用，白块那一句根本轮不到执行。这解释了为什么
+      「硬编码 0x90000000 的白块」和「走 args->Video 的白块」两版都一样黑。
   - **为什么要黑底**：真机上 UEFI 在屏幕底部留了一条**通栏绿条**，早先那版
     青色/淡黄 64×8 色带正好压在这条绿条上，"绿底画青"肉眼和照片都分不出来，
     一度被误判成"标记没出现"。现在 stage 0 先铺一块 480×200 的纯黑，范围覆盖
