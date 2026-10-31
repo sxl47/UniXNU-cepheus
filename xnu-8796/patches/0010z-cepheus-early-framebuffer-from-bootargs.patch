@@ -16,30 +16,30 @@ index abfc169..ec3e53b 100644
 +	 * lays a black backdrop behind this whole area before any colour goes
 +	 * down, so everything here is drawn on black.
 +	 *
-+	 *   lower block (white, 160x24)  hardcoded 0x90000000 / 4320 / 2340 and
-+	 *      touches no state at all. Seeing it means plain C stores through
-+	 *      the framebuffer mapping reach the panel from inside arm_init().
-+	 *   upper block (yellow, 200x24) same shape, but every number comes from
-+	 *      args->Video. Seeing it means boot_args is dereferenceable here.
++	 *   lower block (white, 160x24)  drawn through args->Video at row
++	 *      (height-160): plain C stores reach the panel from arm_init().
++	 *   upper block (yellow, 200x24) same shape at row (height-192), so
++	 *      seeing both means arm_init() really ran its first statements.
++	 *      Both surfaces are the one start.s already proved writable.
 +	 *
-+	 * Neither     => the ret out of start.s never landed in this function.
-+	 * White only  => args->Video faults, so the boot_args pointer handed
-+	 *                over by start.s is not usable.
-+	 * Both        => entry path and args are fine, so cepheus_early_video()
-+	 *                or cepheus_early_mark() is what leaves the screen dark.
++	 * Neither     => the branch into arm_init() never landed, so the entry
++	 *                path itself is still broken.
++	 * White only  => impossible now: both blocks use the same surface.
++	 * Both        => arm_init() entered and args is dereferenceable, so
++	 *                whatever dies next dies after these lines.
 +	 *
-+	 * The identity V=P map is live and the framebuffer block is
-+	 * Non-Cacheable by now (hardware: video pa 0x90000000, 1080x2340,
-+	 * row 4320), so these stores need no cache maintenance.
++	 * The bootstrap world maps only [kernel PA, end of RAM) V=P; the old
++	 * hardcoded 0x90000000 store sat OUTSIDE that window and faulted
++	 * before anything else in arm_init() could ever run.
 +	 */
 +	{
-+		volatile uint32_t *row = (volatile uint32_t *)0x90000000ul +
-+		    (2340u - 160u) * (4320u / sizeof(uint32_t));
++		volatile uint32_t *row = (volatile uint32_t *)(args->Video.v_baseAddr +
++		    (args->Video.v_height - 160) * args->Video.v_rowBytes);
 +		for (unsigned int r = 0; r < 24; r++) {
 +			for (unsigned int c = 0; c < 160; c++) {
 +				row[240 + c] = 0xffffffffu;
 +			}
-+			row += 4320u / sizeof(uint32_t);
++			row += args->Video.v_rowBytes / sizeof(uint32_t);
 +		}
 +		__asm__ volatile("dsb sy" ::: "memory");
 +	}
