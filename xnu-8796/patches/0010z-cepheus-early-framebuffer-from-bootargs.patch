@@ -710,8 +710,8 @@ index d0cdb50..274d5ba 100644
 +	 * the slide.  arm_init paints its slabs before touching args,
 +	 * so a white slab next boot convicts the boot-args slide.
 +	 */
-+	adrp	x10, arm_init@page
-+	add		x10, x10, arm_init@pageoff
++	adrp	x10, EXT(arm_init)@page
++	add		x10, x10, EXT(arm_init)@pageoff
 +	cmp		x10, lr
 +	b.ne	Lprobe_lr_diff
 +	/* blue, rows H-192..H-185: lr == PC-relative arm_init (slide 0) */
@@ -768,6 +768,6 @@ index d0cdb50..274d5ba 100644
 +Lprobe5r_done:
 +Lprobe_lr_done:
 +	/* Enter arm_init PC-relatively: no lr, no adrp, no slide. */
-+	b		arm_init
++	b		EXT(arm_init)
 +#endif
  Ltrampoline:
