@@ -542,7 +542,7 @@ index d0cdb50..274d5ba 100644
  #if !VMAPPLE && !defined(CEPHEUS)
  	MOV64   x1, SCTLR_EL1_DEFAULT
  	cmp		x0, x1
-@@ -844,6 +960,366 @@ common_start:
+@@ -844,6 +960,375 @@ common_start:
  #endif
  
  	// Return to arm_init()
@@ -905,6 +905,15 @@ index d0cdb50..274d5ba 100644
 +	b.ne	Lprobe6_row
 +	dsb		sy
 +Lprobe6_done:
++	/*
++	 * Restore the official first argument before entering arm_init().
++	 * The probes above consumed x0, but arm_init() expects the boot args
++	 * KVA that start.s computes from x20/x22/x23. Without this, args is
++	 * garbage and every const_boot_args consumer (PE_init_platform,
++	 * SecureDTInit) reads 0xff fill.
++	 */
++	add		x0, x20, x22
++	sub		x0, x0, x23
 +	/* Enter arm_init PC-relatively: no lr, no adrp, no slide. */
 +	b		EXT(arm_init)
 +#endif
