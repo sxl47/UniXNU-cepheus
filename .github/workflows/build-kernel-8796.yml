@@ -1,4 +1,5 @@
 name: build-xnu-8796
+# Build trigger: manual retrigger after 2026-10-31 cancellations.
 
 # Parallel line to build-kernel.yml (xnu-10063). This one targets the xnu generation
 # that actually matches an iPadOS 16.6.1 userland: xnu-8796.141.3 (macOS 13.5).
