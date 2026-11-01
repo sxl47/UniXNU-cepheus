@@ -2,7 +2,7 @@ diff --git a/osfmk/arm/arm_init.c b/osfmk/arm/arm_init.c
 index abfc169..ec3e53b 100644
 --- a/osfmk/arm/arm_init.c
 +++ b/osfmk/arm/arm_init.c
-@@ -347,6 +347,69 @@ arm_init(
+@@ -347,6 +347,96 @@ arm_init(
  	DTEntry chosen = NULL;
  	unsigned int dt_entry_size = 0;
  
@@ -69,7 +69,34 @@ index abfc169..ec3e53b 100644
 +	/* Raw boot_args quads; the implementation lives in cepheus_early.c. */
 +extern void cepheus_early_boot_dump(const volatile void *p, const char *tag);
 +extern volatile unsigned long cepheus_boot_regs[24];
++extern volatile unsigned long cepheus_dt_head[20];
++extern unsigned long cepheus_args_copy[512];
++extern const char cepheus_tag_dt[];
  	cepheus_early_mark(1, "arm_init entered (MMU on)");
++#if defined(CEPHEUS)
++	/*
++	 * args here is the PA snapshot start.s took (the KVA translation of
++	 * the real page returns 0xff fill).  The loader publishes DeviceTree
++	 * in the gVirtBase flavor (0xfffffe0000000000 | PA); recover the PA
++	 * and read the tree header through the proven V=P identity map.  If
++	 * the magic matches, point the snapshot's DeviceTree at the PA so
++	 * SecureDTInit() parses the real tree instead of dying on unmapped
++	 * memory.
++	 */
++	{
++		volatile unsigned long *ac = (volatile unsigned long *)(uintptr_t)args;
++		unsigned long dtk = ac[0x60 / sizeof(unsigned long)];
++		unsigned long dtp = dtk - 0xfffffe0000000000UL;
++
++		for (int di = 0; di < 20; di++) {
++			cepheus_dt_head[di] = ((volatile unsigned long *)dtp)[di];
++		}
++		cepheus_early_boot_dump(cepheus_dt_head, cepheus_tag_dt);
++		if ((unsigned int)cepheus_dt_head[0] == 0xd00dfeedu) {
++			ac[0x60 / sizeof(unsigned long)] = dtp;
++		}
++	}
++#endif
  
  	arm_setup_pre_sign();
 diff --git a/osfmk/arm64/cepheus_early.c b/osfmk/arm64/cepheus_early.c
@@ -170,7 +197,7 @@ index f355bac..9f79343 100644
  		}
  	}
  	__asm__ volatile("dsb sy" ::: "memory");
-@@ -104,6 +125,119 @@ cepheus_early_mark(unsigned int stage, const char *label)
+@@ -104,6 +125,130 @@ cepheus_early_mark(unsigned int stage, const char *label)
  	cepheus_early_putc('\n');
  }
  
@@ -274,7 +301,7 @@ index f355bac..9f79343 100644
 +	cepheus_early_string(" @0x");
 +	cepheus_early_hex((uintptr_t)p);
 +	cepheus_early_putc('\n');
-+	for (i = 0; i < 0x11; i++) {
++	for (i = 0; i < 0x14; i++) {
 +		cepheus_early_string("a[0x");
 +		cepheus_early_hex_digits(i, 2);
 +		cepheus_early_string("]=");
@@ -287,6 +314,17 @@ index f355bac..9f79343 100644
 +volatile unsigned long cepheus_boot_regs[24];
 +const char cepheus_tag_regs[] = "regs0";
 +const char cepheus_tag_pa[] = "args-PA";
++const char cepheus_tag_dt[] = "dt-head";
++
++/*
++ * PA snapshot of the loader's args page, taken by start.s through the
++ * proven V=P map; arm_init() consumes this copy because the KVA
++ * translation of the original page returns 0xff fill.  Also the head
++ * of the device tree at its recovered physical address, read in
++ * arm_init() before SecureDTInit() ever sees the pointer.
++ */
++unsigned long cepheus_args_copy[512] __attribute__((aligned(4096)));
++volatile unsigned long cepheus_dt_head[20];
  void
  cepheus_early_panic(const char *fmt, va_list *args)
  {
@@ -539,7 +577,7 @@ index d0cdb50..274d5ba 100644
  #if !VMAPPLE && !defined(CEPHEUS)
  	MOV64   x1, SCTLR_EL1_DEFAULT
  	cmp		x0, x1
-@@ -844,6 +960,431 @@ common_start:
+@@ -844,6 +960,443 @@ common_start:
  #endif
  
  	// Return to arm_init()
@@ -903,21 +941,13 @@ index d0cdb50..274d5ba 100644
 +	dsb		sy
 +Lprobe6_done:
 +	/*
-+	 * Restore the official first argument before entering arm_init().
-+	 * The probes above consumed x0, but arm_init() expects the boot args
-+	 * KVA that start.s computes from x20/x22/x23.
-+	 */
-+	add		x0, x20, x22
-+	sub		x0, x0, x23
-+	/*
-+	 * Publish and PRINT the translation record here, from start.s, so
-+	 * it survives whatever arm_init() does: the official bases, the
-+	 * live translation controls, the computed args KVA, TTBR1 re-set
-+	 * to the KVA table start.s built (x25 + one page), the first
-+	 * quadword read back THROUGH the args KVA (the decisive sample),
-+	 * the KVA root entries at the args index and the top entries.
-+	 * Only dead scratch registers are consumed; the V=P map is proven
-+	 * good.
++	 * The KVA translation of the boot args returns 0xff fill while the
++	 * same page is healthy through its physical address, and the KVA
++	 * root entries sampled through the TTBR1 table are zero.  Stop
++	 * depending on TTBR1 entirely: record the translation state, then
++	 * snapshot the args page into the kernel image (the kernel runs
++	 * V=P, so its own addresses are readable through the proven V=P
++	 * map) and hand arm_init() the snapshot instead of the KVA.
 +	 */
 +	adrp	x9, EXT(cepheus_boot_regs)@page
 +	add		x9, x9, EXT(cepheus_boot_regs)@pageoff
@@ -930,8 +960,11 @@ index d0cdb50..274d5ba 100644
 +	mrs		x12, tcr_el1
 +	mrs		x13, sctlr_el1
 +	stp		x12, x13, [x9, #64]
-+	str		x0, [x9, #80]
-+	/* Force TTBR1 back onto the bootstrap KVA table. */
++	/* args KVA as the official entry sequence computes it. */
++	add		x14, x20, x22
++	sub		x14, x14, x23
++	str		x14, [x9, #80]
++	/* Re-point TTBR1 at the KVA table start.s built, for the record. */
 +	add		x10, x25, #PGBYTES
 +	and		x10, x10, #TTBR_BADDR_MASK
 +	msr		ttbr1_el1, x10
@@ -942,10 +975,10 @@ index d0cdb50..274d5ba 100644
 +	mrs		x11, ttbr1_el1
 +	str		x11, [x9, #88]
 +	/* The decisive sample: the args first quadword through the KVA. */
-+	ldr		x11, [x0]
++	ldr		x11, [x14]
 +	str		x11, [x9, #96]
 +	/* KVA root entries at the args index and at the top of the page. */
-+	ubfx	x12, x0, #30, #9
++	ubfx	x12, x14, #30, #9
 +	add		x12, x10, x12, lsl #3
 +	ldr		x13, [x12]
 +	str		x13, [x9, #104]
@@ -956,17 +989,34 @@ index d0cdb50..274d5ba 100644
 +	str		x13, [x9, #120]
 +	ldr		x13, [x12, #8]
 +	str		x13, [x9, #128]
-+	/* Both dumps print here; arm_init() only needs x0. */
-+	mov		x19, x0
++	/* The loader writes DeviceTree in the gVirtBase flavor; record both. */
++	ldr		x14, [x20, #0x60]
++	str		x14, [x9, #136]
++	MOV64	x15, 0xFFFFFE0000000000
++	sub		x14, x14, x15
++	str		x14, [x9, #144]
++	/* Snapshot the args page (0x1000 bytes) into the kernel image. */
++	adrp	x15, EXT(cepheus_args_copy)@page
++	add		x15, x15, EXT(cepheus_args_copy)@pageoff
++	str		x15, [x9, #152]
++	mov		x0, x20
++	mov		x11, #128
++Largs_copy_loop:
++	ldp		x12, x13, [x0], #16
++	ldp		x14, x16, [x0], #16
++	stp		x12, x13, [x15], #16
++	stp		x14, x16, [x15], #16
++	subs	x11, x11, #1
++	b.ne	Largs_copy_loop
++	adrp	x15, EXT(cepheus_args_copy)@page
++	add		x15, x15, EXT(cepheus_args_copy)@pageoff
++	mov		x19, x15
++	/* Print the record here, before arm_init() can disturb anything. */
 +	mov		x0, x9
 +	adrp	x1, EXT(cepheus_tag_regs)@page
 +	add		x1, x1, EXT(cepheus_tag_regs)@pageoff
 +	bl		EXT(cepheus_early_boot_dump)
-+	mov		x0, x20
-+	adrp	x1, EXT(cepheus_tag_pa)@page
-+	add		x1, x1, EXT(cepheus_tag_pa)@pageoff
-+	bl		EXT(cepheus_early_boot_dump)
-+	/* Enter arm_init PC-relatively: no lr, no adrp, no slide. */
++	/* Hand arm_init() the PA snapshot. */
 +	mov		x0, x19
 +	b		EXT(arm_init)
 +#endif
