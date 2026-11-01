@@ -72,15 +72,6 @@ index abfc169..ec3e53b 100644
  	cepheus_early_mark(1, "arm_init entered (MMU on)");
  
  	arm_setup_pre_sign();
-@@ -355,5 +418,7 @@ arm_init(
- 	/* If kernel integrity is supported, use a constant copy of the boot args. */
-+	cepheus_early_boot_dump(cepheus_boot_regs, "regs0");
-+	cepheus_early_boot_dump((const volatile void *)cepheus_boot_regs[0], "args-PA");
- 	const_boot_args = *args;
- 	BootArgs = args = &const_boot_args;
- 
- 	cpu_data_init(&BootCpuData);
-
 diff --git a/osfmk/arm64/cepheus_early.c b/osfmk/arm64/cepheus_early.c
 index f355bac..9f79343 100644
 --- a/osfmk/arm64/cepheus_early.c
@@ -179,7 +170,7 @@ index f355bac..9f79343 100644
  		}
  	}
  	__asm__ volatile("dsb sy" ::: "memory");
-@@ -104,6 +125,117 @@ cepheus_early_mark(unsigned int stage, const char *label)
+@@ -104,6 +125,119 @@ cepheus_early_mark(unsigned int stage, const char *label)
  	cepheus_early_putc('\n');
  }
  
@@ -294,6 +285,8 @@ index f355bac..9f79343 100644
 +
 +/* Register/page-table record start.s publishes for arm_init(). */
 +volatile unsigned long cepheus_boot_regs[24];
++const char cepheus_tag_regs[] = "regs0";
++const char cepheus_tag_pa[] = "args-PA";
  void
  cepheus_early_panic(const char *fmt, va_list *args)
  {
@@ -546,7 +539,7 @@ index d0cdb50..274d5ba 100644
  #if !VMAPPLE && !defined(CEPHEUS)
  	MOV64   x1, SCTLR_EL1_DEFAULT
  	cmp		x0, x1
-@@ -844,6 +960,411 @@ common_start:
+@@ -844,6 +960,431 @@ common_start:
  #endif
  
  	// Return to arm_init()
@@ -912,19 +905,19 @@ index d0cdb50..274d5ba 100644
 +	/*
 +	 * Restore the official first argument before entering arm_init().
 +	 * The probes above consumed x0, but arm_init() expects the boot args
-+	 * KVA that start.s computes from x20/x22/x23. Without this, args is
-+	 * garbage and every const_boot_args consumer (PE_init_platform,
-+	 * SecureDTInit) reads 0xff fill.
++	 * KVA that start.s computes from x20/x22/x23.
 +	 */
 +	add		x0, x20, x22
 +	sub		x0, x0, x23
 +	/*
-+	 * Publish the register and page-table record for arm_init(): the
-+	 * official bases, the live translation controls, the computed args
-+	 * KVA, the last eight entries of the TTBR1 root page and the two
-+	 * entries at the root index of that args KVA.  All reads go through
-+	 * the V=P map, which is proven good, and only dead scratch
-+	 * registers are consumed.
++	 * Publish and PRINT the translation record here, from start.s, so
++	 * it survives whatever arm_init() does: the official bases, the
++	 * live translation controls, the computed args KVA, TTBR1 re-set
++	 * to the KVA table start.s built (x25 + one page), the first
++	 * quadword read back THROUGH the args KVA (the decisive sample),
++	 * the KVA root entries at the args index and the top entries.
++	 * Only dead scratch registers are consumed; the V=P map is proven
++	 * good.
 +	 */
 +	adrp	x9, EXT(cepheus_boot_regs)@page
 +	add		x9, x9, EXT(cepheus_boot_regs)@pageoff
@@ -938,23 +931,43 @@ index d0cdb50..274d5ba 100644
 +	mrs		x13, sctlr_el1
 +	stp		x12, x13, [x9, #64]
 +	str		x0, [x9, #80]
-+	and		x11, x11, #TTBR_BADDR_MASK
-+	add		x10, x11, #0xFC0
-+	ldp		x12, x13, [x10], #16
-+	stp		x12, x13, [x9, #88]
-+	ldp		x12, x13, [x10], #16
-+	stp		x12, x13, [x9, #104]
-+	ldp		x12, x13, [x10], #16
-+	stp		x12, x13, [x9, #120]
-+	ldp		x12, x13, [x10]
-+	stp		x12, x13, [x9, #136]
++	/* Force TTBR1 back onto the bootstrap KVA table. */
++	add		x10, x25, #PGBYTES
++	and		x10, x10, #TTBR_BADDR_MASK
++	msr		ttbr1_el1, x10
++	isb		sy
++	tlbi	vmalle1
++	dsb		ish
++	isb		sy
++	mrs		x11, ttbr1_el1
++	str		x11, [x9, #88]
++	/* The decisive sample: the args first quadword through the KVA. */
++	ldr		x11, [x0]
++	str		x11, [x9, #96]
++	/* KVA root entries at the args index and at the top of the page. */
 +	ubfx	x12, x0, #30, #9
-+	add		x12, x11, x12, lsl #3
++	add		x12, x10, x12, lsl #3
 +	ldr		x13, [x12]
-+	str		x13, [x9, #152]
++	str		x13, [x9, #104]
 +	ldr		x13, [x12, #8]
-+	str		x13, [x9, #160]
++	str		x13, [x9, #112]
++	add		x12, x10, #0xFC0
++	ldr		x13, [x12]
++	str		x13, [x9, #120]
++	ldr		x13, [x12, #8]
++	str		x13, [x9, #128]
++	/* Both dumps print here; arm_init() only needs x0. */
++	mov		x19, x0
++	mov		x0, x9
++	adrp	x1, EXT(cepheus_tag_regs)@page
++	add		x1, x1, EXT(cepheus_tag_regs)@pageoff
++	bl		EXT(cepheus_early_boot_dump)
++	mov		x0, x20
++	adrp	x1, EXT(cepheus_tag_pa)@page
++	add		x1, x1, EXT(cepheus_tag_pa)@pageoff
++	bl		EXT(cepheus_early_boot_dump)
 +	/* Enter arm_init PC-relatively: no lr, no adrp, no slide. */
++	mov		x0, x19
 +	b		EXT(arm_init)
 +#endif
  Ltrampoline:
