@@ -2,7 +2,7 @@ diff --git a/osfmk/arm/arm_init.c b/osfmk/arm/arm_init.c
 index abfc169..ec3e53b 100644
 --- a/osfmk/arm/arm_init.c
 +++ b/osfmk/arm/arm_init.c
-@@ -347,6 +347,100 @@ arm_init(
+@@ -347,6 +347,129 @@ arm_init(
  	DTEntry chosen = NULL;
  	unsigned int dt_entry_size = 0;
  
@@ -72,33 +72,62 @@ index abfc169..ec3e53b 100644
 +extern volatile unsigned long cepheus_dt_head[20];
 +extern unsigned long cepheus_args_copy[512];
 +extern const char cepheus_tag_dt[];
++extern const char cepheus_tag_fix[];
  	cepheus_early_mark(1, "arm_init entered (MMU on)");
 +#if defined(CEPHEUS)
 +	/*
 +	 * args here is the PA snapshot start.s took (the KVA translation of
-+	 * the real page returns 0xff fill).  The loader publishes DeviceTree
-+	 * as Kernel.Base + (TreeAddress - PhysicalBase), and places the tree
-+	 * exactly one page after the args page (TreeAddress = ArgsAddress +
-+	 * EFI_PAGE_SIZE in DarwinBoot), so the physical address of the FDT
-+	 * is simply argsPA + 0x1000, with argsPA recorded by start.s in
-+	 * cepheus_boot_regs[0].  Stripping the gVirtBase flavor yields the
-+	 * window offset instead of a physical address -- p15 proved that by
-+	 * dumping ASCII garbage read from low memory.  If the magic
-+	 * matches, point the snapshot's DeviceTree at the PA so
-+	 * SecureDTInit() parses the real tree instead of dying on unmapped
-+	 * memory.
++	 * the real page returns 0xff fill).  p16's panic decoded cleanly:
++	 * the loader publishes DeviceTree as gVirtBase | treePA with
++	 * treePA = 0x804d1000 and length 0x87c2c4, and the SecureDTInit
++	 * walk panicked exactly at base + 2^32 + small because the broken
++	 * KVA read filled prop->length with 0xff.  So strip the gVirtBase
++	 * flavor to recover the physical address, sanity-check it, and
++	 * hand SecureDTInit a pointer the V=P map can actually serve.
++	 * The pinned DarwinBoot would place the tree at argsPA + 0x1000;
++	 * the running firmware does not, but both candidates are checked.
++	 * The rewrite is unconditional: an early visible panic beats a
++	 * silent hang on a stale pointer.
 +	 */
 +	{
 +		volatile unsigned long *ac = (volatile unsigned long *)(uintptr_t)args;
-+		unsigned long dtp = cepheus_boot_regs[0] + 0x1000UL;
++		unsigned long dtk = ac[0x60 / sizeof(unsigned long)];
++		unsigned long dtl = ac[0x68 / sizeof(unsigned long)] & 0xffffffffUL;
++		unsigned long pa = cepheus_boot_regs[0];
++		unsigned long pb = cepheus_boot_regs[3];
++		unsigned long dtpB = dtk - 0xfffffe0000000000UL;
++		unsigned long dtpA = pa + 0x1000UL;
++		volatile unsigned int *headB = (volatile unsigned int *)(uintptr_t)dtpB;
++		volatile unsigned int *headA = (volatile unsigned int *)(uintptr_t)dtpA;
++		unsigned int magicA = headA[0];
++		unsigned int magicB = headB[0];
++		unsigned int rootB1 = headB[1];
++		unsigned long dtp = dtpB;
++
++		if (magicB == 0xd00dfeedu) {
++			dtp = dtpB;
++		} else if (magicA == 0xd00dfeedu) {
++			dtp = dtpA;
++		} else if (magicB < 0x100000u && rootB1 < 0x100000u && magicB != 0) {
++			/* Apple-format tree: root {nProperties, nChildren} both small. */
++			dtp = dtpB;
++		}
++		/* Diagnostic record through the exported dump helper (the string
++		 * helpers are file-static in cepheus_early.c). */
++		cepheus_dt_head[0] = dtk;
++		cepheus_dt_head[1] = dtl;
++		cepheus_dt_head[2] = pa;
++		cepheus_dt_head[3] = pb;
++		cepheus_dt_head[4] = ((unsigned long)magicB << 32) | magicA;
++		cepheus_dt_head[5] = rootB1;
++		cepheus_dt_head[6] = dtp;
++		cepheus_early_boot_dump(cepheus_dt_head, cepheus_tag_fix);
 +
 +		for (int di = 0; di < 20; di++) {
 +			cepheus_dt_head[di] = ((volatile unsigned long *)dtp)[di];
 +		}
 +		cepheus_early_boot_dump(cepheus_dt_head, cepheus_tag_dt);
-+		if ((unsigned int)cepheus_dt_head[0] == 0xd00dfeedu) {
-+			ac[0x60 / sizeof(unsigned long)] = dtp;
-+		}
++		ac[0x60 / sizeof(unsigned long)] = dtp;
 +	}
 +#endif
  
@@ -201,7 +230,7 @@ index f355bac..9f79343 100644
  		}
  	}
  	__asm__ volatile("dsb sy" ::: "memory");
-@@ -104,6 +125,130 @@ cepheus_early_mark(unsigned int stage, const char *label)
+@@ -104,6 +125,131 @@ cepheus_early_mark(unsigned int stage, const char *label)
  	cepheus_early_putc('\n');
  }
  
@@ -319,6 +348,7 @@ index f355bac..9f79343 100644
 +const char cepheus_tag_regs[] = "regs0";
 +const char cepheus_tag_pa[] = "args-PA";
 +const char cepheus_tag_dt[] = "dt-head";
++const char cepheus_tag_fix[] = "dtfix";
 +
 +/*
 + * PA snapshot of the loader's args page, taken by start.s through the
