@@ -2,7 +2,7 @@ diff --git a/osfmk/arm/arm_init.c b/osfmk/arm/arm_init.c
 index abfc169..ec3e53b 100644
 --- a/osfmk/arm/arm_init.c
 +++ b/osfmk/arm/arm_init.c
-@@ -347,6 +347,96 @@ arm_init(
+@@ -347,6 +347,100 @@ arm_init(
  	DTEntry chosen = NULL;
  	unsigned int dt_entry_size = 0;
  
@@ -77,16 +77,20 @@ index abfc169..ec3e53b 100644
 +	/*
 +	 * args here is the PA snapshot start.s took (the KVA translation of
 +	 * the real page returns 0xff fill).  The loader publishes DeviceTree
-+	 * in the gVirtBase flavor (0xfffffe0000000000 | PA); recover the PA
-+	 * and read the tree header through the proven V=P identity map.  If
-+	 * the magic matches, point the snapshot's DeviceTree at the PA so
++	 * as Kernel.Base + (TreeAddress - PhysicalBase), and places the tree
++	 * exactly one page after the args page (TreeAddress = ArgsAddress +
++	 * EFI_PAGE_SIZE in DarwinBoot), so the physical address of the FDT
++	 * is simply argsPA + 0x1000, with argsPA recorded by start.s in
++	 * cepheus_boot_regs[0].  Stripping the gVirtBase flavor yields the
++	 * window offset instead of a physical address -- p15 proved that by
++	 * dumping ASCII garbage read from low memory.  If the magic
++	 * matches, point the snapshot's DeviceTree at the PA so
 +	 * SecureDTInit() parses the real tree instead of dying on unmapped
 +	 * memory.
 +	 */
 +	{
 +		volatile unsigned long *ac = (volatile unsigned long *)(uintptr_t)args;
-+		unsigned long dtk = ac[0x60 / sizeof(unsigned long)];
-+		unsigned long dtp = dtk - 0xfffffe0000000000UL;
++		unsigned long dtp = cepheus_boot_regs[0] + 0x1000UL;
 +
 +		for (int di = 0; di < 20; di++) {
 +			cepheus_dt_head[di] = ((volatile unsigned long *)dtp)[di];
