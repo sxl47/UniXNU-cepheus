@@ -72,15 +72,12 @@ index abfc169..ec3e53b 100644
  	cepheus_early_mark(1, "arm_init entered (MMU on)");
  
  	arm_setup_pre_sign();
-@@ -355,5 +418,10 @@ arm_init(
+@@ -355,5 +418,7 @@ arm_init(
  	/* If kernel integrity is supported, use a constant copy of the boot args. */
 +	cepheus_early_boot_dump(cepheus_boot_regs, "regs0");
-+	cepheus_early_boot_dump(cepheus_boot_regs + 17, "regs1");
 +	cepheus_early_boot_dump((const volatile void *)cepheus_boot_regs[0], "args-PA");
-+	cepheus_early_boot_dump(args, "post-slide");
  	const_boot_args = *args;
  	BootArgs = args = &const_boot_args;
-+	cepheus_early_boot_dump(args, "const-copy");
  
  	cpu_data_init(&BootCpuData);
 
